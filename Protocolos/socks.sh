@@ -237,7 +237,7 @@ configure_port() {
   echo -e "${Y}Mini-Banner (Enter=default)${N}"
   read -r banner
   if [[ -z "${banner:-}" ]]; then
-    [[ "$resp" == "101" ]] && banner="Web Socket Protocol Handshake" || banner="Connection Established"
+    [[ "$resp" == "101" ]] && banner="SN Switching Protocols" || banner="Connection Established"
   fi
 
   read -r -p "X-Pass (opcional): " pass
