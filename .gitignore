@@ -5,3 +5,11 @@
 .env
 node_modules/
 __pycache__/
+.ssh/
+.bash_history
+.bashrc
+.profile
+.gitconfig
+.cache/
+.snap/
+.lesshst
