@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-# PDirect.py - PYTHON2 + Fake HTTP response + DIRECT local
-# OPTIMIZADO para menor latencia:
-# - TCP_NODELAY en cliente y target
-# - Ajuste de buffers (best-effort)
-# - select loop estable
+# PDirect.py - PYTHON2 + Fake HTTP response + DIRECT local (LowLatency)
 
 import socket
 import threading
@@ -38,9 +34,12 @@ PASS = str(args.contr) if args.contr else ""
 STATUS_RESP = args.response if args.response else '200'
 STATUS_TXT = args.texto if args.texto else ''
 
+# Cambio solicitado:
+# Antes: 'Web Socket Protocol Handshake'
+# Ahora: 'SN Switching Protocols'
 if STATUS_TXT == '':
     if STATUS_RESP == '101':
-        STATUS_TXT = 'Web Socket Protocol Handshake'
+        STATUS_TXT = 'SN Switching Protocols'
     else:
         STATUS_TXT = 'Connection Established'
 
@@ -90,7 +89,6 @@ def findHeader(head, header):
         return ''
 
 def tune_socket(s):
-    # Best-effort tuning (no falla si no se puede)
     try:
         s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     except:
@@ -112,8 +110,6 @@ class Server(threading.Thread):
         self.soc = socket.socket(socket.AF_INET)
         self.soc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.soc.settimeout(2)
-
-        # tuning en socket servidor no aplica igual, pero ok
         try:
             self.soc.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 262144)
             self.soc.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 262144)
@@ -170,7 +166,6 @@ class ConnectionHandler(threading.Thread):
             if not data:
                 return
 
-            # X-Split compat
             split = findHeader(data, 'X-Split')
             if split != '':
                 try:
@@ -178,22 +173,16 @@ class ConnectionHandler(threading.Thread):
                 except:
                     pass
 
-            # X-Pass opcional
             if len(PASS) != 0:
                 passwd = findHeader(data, 'X-Pass')
                 if passwd != PASS:
                     self.client.send('HTTP/1.1 400 WrongPass!\r\n\r\n')
                     return
 
-            # compat
             _ = findHeader(data, 'X-Real-Host')
 
-            # manda respuesta HTTP fake
             self.client.sendall(RESPONSE)
-
-            # DIRECT local
             self.connect_local()
-
             self.tunnel()
 
         except:
@@ -204,7 +193,6 @@ class ConnectionHandler(threading.Thread):
     def tunnel(self):
         socs = [self.client, self.target]
         count = 0
-
         while True:
             count += 1
             try:
