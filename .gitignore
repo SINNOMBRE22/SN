@@ -1,0 +1,7 @@
+*.log
+*.db
+*.key
+*.pem
+.env
+node_modules/
+__pycache__/
