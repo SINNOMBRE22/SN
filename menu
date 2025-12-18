@@ -53,7 +53,7 @@ require_root() {
     clear_screen
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     echo -e "${Y}Este panel debe ejecutarse como root.${N}"
-    echo -e "${W}Usa:${N} ${C}sudo ./menu${N}  ${W}o${N}  ${C}sudo sn${N}"
+    echo -e "${W}Usa:${N} ${C}sudo menu${N}  ${W}o${N}  ${C}sudo sn${N}"
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     exit 1
   fi
@@ -80,11 +80,11 @@ get_system_info() {
     || echo "No disponible"
   )"
 
-  USUARIO="$(whoami)"
-  ZONA_HORARIA="$(timedatectl 2>/dev/null | awk -F': ' '/Time zone/ {print $2}' | awk '{print $1}' || date +%Z)"
-  MEM_TOTAL="$(free -m | awk 'NR==2{print $2}' || echo 0)"
-  MEM_USADA="$(free -m | awk 'NR==2{print $3}' || echo 0)"
-  MEM_LIBRE="$(free -m | awk 'NR==2{print $4}' || echo 0)"
+ USUARIO="$(whoami)"
+ZONA_HORARIA="$(timedatectl 2>/dev/null | awk -F': ' '/Time zone/ {print $2}' | awk '{print $1}' || date +%Z)"
+
+# Memoria real, usada y disponible
+read MEM_TOTAL MEM_USADA MEM_LIBRE <<< $(free -m | awk '/^Mem:/ {print $2, $3, $7}')
 }
 
 # ============================================
@@ -103,7 +103,7 @@ show_banner() {
   echo -e "${R}[${N} ${W}Usuario:  ${G}${USUARIO}${N}"
   echo -e "${R}[${N} ${W}Zona Horaria: ${Y}${ZONA_HORARIA}${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${R}[${N} ${W}Memoria:    ${Y}${MEM_TOTAL} MB${W} > Uso:     ${Y}${MEM_USADA} MB${W} > Libre:  ${G}${MEM_LIBRE} MB${R} ]${N}"
+ echo -e "${R}[${N} ${W}Memoria: ${Y}${MEM_TOTAL} MB${W} > Uso: ${Y}${MEM_USADA} MB${W} > Libre: ${G}${MEM_LIBRE} MB${R} ]${N}"
 }
 
 # ============================================
