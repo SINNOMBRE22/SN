@@ -264,7 +264,7 @@ main_menu() {
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo ""
 
-  echo -ne "${W}Selecciona una opción:       ${G}"
+  echo -ne "${W}Selecciona una opción: ${G}"
   read -r option
 
   case "${option:-}" in
