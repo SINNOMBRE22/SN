@@ -65,7 +65,7 @@ banner() {
 step() {
   local msg="$1"
   printf " ${C}•${N} %b" "${W}${msg}${N}"
-  local pad=$(( 35 - ${#msg} ))   # acorté el ancho de padding para líneas más cortas
+  local pad=$(( 35 - ${#msg} ))   # ancho reducido para líneas más cortas
   (( pad < 1 )) && pad=1
   printf "%*s" "$pad" "" | tr ' ' '.'
   printf " "
@@ -78,7 +78,7 @@ apt_fix_if_needed() {
   apt-get -f install -y &>/dev/null || true
 }
 
-# --- Spinner / animación "insta" ---
+# --- Spinner / animación ---
 spinner_loop() {
   local msg="$1"
   local frames=( '▁' '▂' '▃' '▄' '▅' '▆' '▇' '█' '▇' '▆' '▅' '▄' '▃' '▂' )
@@ -90,8 +90,8 @@ spinner_loop() {
   done
 }
 spinner_start() {
-  local msg="$1"
-  spinner_loop "$msg" & echo $!
+  # devuelve PID del spinner background
+  spinner_loop "$1" & echo $!
 }
 spinner_stop() {
   local pid="$1"
@@ -103,19 +103,19 @@ spinner_stop() {
 }
 # -------------------------------------
 
-# Espera por locks de apt/dpkg (evita quedarse "congelado")
+# Espera por locks de apt/dpkg (evita quedarse indefinido)
 wait_for_apt() {
   local waited=0
-  local max_wait=120  # segundos totales a esperar antes de continuar (configurable)
+  local max_wait=120  # segundos a esperar antes de continuar/advertir
   local sleep_step=2
   local msg="Esperando bloqueo de apt/dpkg..."
+  # comprueba locks comunes
   while lsof /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock 2>/dev/null | grep -q . || fuser /var/lib/dpkg/lock-frontend 2>/dev/null | grep -q .; do
     if (( waited >= max_wait )); then
       echo ""
-      echo -e "${Y}Advertencia:${N} apt/dpkg sigue bloqueado después de ${max_wait}s. Intentando de todos modos."
+      echo -e "${Y}Advertencia:${N} apt/dpkg sigue bloqueado después de ${max_wait}s. Se intentará continuar."
       return 1
     fi
-    # spinner breve mientras esperamos
     local sp
     sp=$(spinner_start "$msg")
     sleep "$sleep_step"
@@ -125,11 +125,14 @@ wait_for_apt() {
   return 0
 }
 
-# Ejecuta comando con spinner y timeout si está disponible
+# Ejecuta comando con spinner, guarda salida para diagnóstico y aplica timeout si existe
 run_quiet() {
   local cmd="$*"
-  local msg="$(printf '%s' "$cmd" | cut -c1-28)"
-  # si hay locks, esperar antes de ejecutar
+  local msg="$(printf '%s' "$cmd" | cut -c1-36)"
+  local out
+  out="$(mktemp /tmp/sninout.XXXXXX)" || out="/tmp/sninout.$$"
+
+  # si hay locks, esperar (pero no bloquear indefinidamente)
   wait_for_apt || true
 
   local use_timeout=false
@@ -137,39 +140,55 @@ run_quiet() {
     use_timeout=true
   fi
 
-  local full_cmd="$cmd"
+  local exec_cmd
   if $use_timeout; then
-    # límite razonable por comando para evitar congelamientos (5m)
-    full_cmd="timeout 300s bash -lc '${cmd//\'/\'\\\'\'}'"
+    # timeout razonable por comando (300s)
+    exec_cmd="timeout 300s bash -lc \"$cmd\""
+  else
+    exec_cmd="bash -lc \"$cmd\""
   fi
 
   local spid
   spid=$(spinner_start "$msg")
-  if bash -lc "$full_cmd" &>/dev/null; then
+  if bash -lc "$exec_cmd" >"$out" 2>&1; then
     spinner_stop "$spid"
+    # mostrar últimas líneas útiles (silencioso por defecto, muestra resumen)
+    tail -n 5 "$out" | sed -n '1,5p' 2>/dev/null || true
+    rm -f "$out" 2>/dev/null || true
     return 0
   fi
   spinner_stop "$spid"
 
-  # intentar reparar y reintentar una vez
+  # intento de reparación y reintento
   apt_fix_if_needed
+
   spid=$(spinner_start "$msg")
-  if bash -lc "$full_cmd" &>/dev/null; then
+  if bash -lc "$exec_cmd" >"$out" 2>&1; then
     spinner_stop "$spid"
+    tail -n 5 "$out" | sed -n '1,5p' 2>/dev/null || true
+    rm -f "$out" 2>/dev/null || true
     return 0
   fi
   spinner_stop "$spid"
+
+  # en caso de fallo, volcar salida para diagnóstico
+  echo ""
+  echo -e "${R}Comando falló:${N} $cmd"
+  echo "Salida (últimas 200 líneas):"
+  tail -n 200 "$out" || true
+  echo "Fin de salida."
+  rm -f "$out" 2>/dev/null || true
   return 1
 }
 
 apt_update() {
   step "Actualizando repos (apt update)"
-  # usar el comando correcto sin -y
+  # usar apt-get update sin -y
   if run_quiet "apt-get update"; then
     ok
   else
     fail
-    echo -e "${R}Error al ejecutar apt-get update. Intenta ejecutar manualmente: ${C}apt-get update${N}"
+    echo -e "${R}Error al ejecutar apt-get update. Ejecuta manualmente: ${C}apt-get update${N}"
     exit 1
   fi
 }
