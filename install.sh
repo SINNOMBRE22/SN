@@ -2,7 +2,14 @@
 set -euo pipefail
 
 # =========================================================
-# SinNombre - Installer (simple, fiable)
+# SinNombre - Installer (Ubuntu/Debian apt)
+# - Instala dependencias
+# - Descarga e instala el proyecto en: /etc/SN
+# - chmod +x menu + *.sh + *.py
+# - Comandos globales: sn y menu (root-only)
+# - Banner en /root/.bashrc (root)
+#
+# Repo:
 REPO_OWNER="SINNOMBRE22"
 REPO_NAME="SN"
 REPO_BRANCH="main"
@@ -12,11 +19,20 @@ INSTALL_DIR="/etc/SN"
 MENU_PATH="${INSTALL_DIR}/menu"
 # =========================================================
 
-R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'
-W='\033[1;37m'; N='\033[0m'; D='\033[2m'; BOLD='\033[1m'
+R='\033[0;31m'
+G='\033[0;32m'
+Y='\033[1;33m'
+C='\033[0;36m'
+W='\033[1;37m'
+N='\033[0m'
+D='\033[2m'
+BOLD='\033[1m'
 
 sn_line() { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
 
+# ----------------------------
+# Args
+# ----------------------------
 START_AFTER=false
 for arg in "$@"; do
   case "$arg" in
@@ -26,7 +42,8 @@ done
 
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-    clear; sn_line
+    clear
+    sn_line
     echo -e "${Y}Debes ejecutar como root.${N}"
     echo -e "${W}Usa:${N} ${C}sudo bash install.sh${N}"
     sn_line
@@ -48,7 +65,7 @@ banner() {
 step() {
   local msg="$1"
   printf " ${C}•${N} %b" "${W}${msg}${N}"
-  local pad=$(( 30 - ${#msg} ))
+  local pad=$(( 35 - ${#msg} ))   # ancho reducido para líneas más cortas
   (( pad < 1 )) && pad=1
   printf "%*s" "$pad" "" | tr ' ' '.'
   printf " "
@@ -57,48 +74,121 @@ ok()   { echo -e "${G}[OK]${N}"; }
 fail() { echo -e "${R}[FAIL]${N}"; }
 
 apt_fix_if_needed() {
-  dpkg --configure -a || true
-  apt-get -f install -y || true
+  dpkg --configure -a &>/dev/null || true
+  apt-get -f install -y &>/dev/null || true
 }
 
-# Ejecuta comando en primer plano y muestra salida (tee). Devuelve rc del comando.
+# --- Spinner / animación ---
+spinner_loop() {
+  local msg="$1"
+  local frames=( '▁' '▂' '▃' '▄' '▅' '▆' '▇' '█' '▇' '▆' '▅' '▄' '▃' '▂' )
+  while true; do
+    for f in "${frames[@]}"; do
+      printf "\r ${C}%s${N} %s" "${msg}" "${f}"
+      sleep 0.07
+    done
+  done
+}
+spinner_start() {
+  # devuelve PID del spinner background
+  spinner_loop "$1" & echo $!
+}
+spinner_stop() {
+  local pid="$1"
+  if [[ -n "${pid:-}" ]] && kill -0 "$pid" >/dev/null 2>&1; then
+    kill "$pid" >/dev/null 2>&1 || true
+    wait "$pid" 2>/dev/null || true
+  fi
+  printf "\r"
+}
+# -------------------------------------
+
+# Espera por locks de apt/dpkg (evita quedarse indefinido)
+wait_for_apt() {
+  local waited=0
+  local max_wait=120  # segundos a esperar antes de continuar/advertir
+  local sleep_step=2
+  local msg="Esperando bloqueo de apt/dpkg..."
+  # comprueba locks comunes
+  while lsof /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock 2>/dev/null | grep -q . || fuser /var/lib/dpkg/lock-frontend 2>/dev/null | grep -q .; do
+    if (( waited >= max_wait )); then
+      echo ""
+      echo -e "${Y}Advertencia:${N} apt/dpkg sigue bloqueado después de ${max_wait}s. Se intentará continuar."
+      return 1
+    fi
+    local sp
+    sp=$(spinner_start "$msg")
+    sleep "$sleep_step"
+    spinner_stop "$sp"
+    waited=$((waited + sleep_step))
+  done
+  return 0
+}
+
+# Ejecuta comando con spinner, guarda salida para diagnóstico y aplica timeout si existe
 run_quiet() {
   local cmd="$*"
+  local msg="$(printf '%s' "$cmd" | cut -c1-36)"
   local out
   out="$(mktemp /tmp/sninout.XXXXXX)" || out="/tmp/sninout.$$"
-  echo ""    # separación visual
-  echo -e "${D}--- Ejecutando:${N} ${cmd}"
-  # Ejecutar y mostrar salida en tiempo real
-  if bash -lc "$cmd" 2>&1 | tee "$out"; then
+
+  # si hay locks, esperar (pero no bloquear indefinidamente)
+  wait_for_apt || true
+
+  local use_timeout=false
+  if command -v timeout >/dev/null 2>&1; then
+    use_timeout=true
+  fi
+
+  local exec_cmd
+  if $use_timeout; then
+    # timeout razonable por comando (300s)
+    exec_cmd="timeout 300s bash -lc \"$cmd\""
+  else
+    exec_cmd="bash -lc \"$cmd\""
+  fi
+
+  local spid
+  spid=$(spinner_start "$msg")
+  if bash -lc "$exec_cmd" >"$out" 2>&1; then
+    spinner_stop "$spid"
+    # mostrar últimas líneas útiles (silencioso por defecto, muestra resumen)
+    tail -n 5 "$out" | sed -n '1,5p' 2>/dev/null || true
     rm -f "$out" 2>/dev/null || true
     return 0
-  else
-    # intento de reparación y reintento simple
-    echo ""
-    echo -e "${Y}Intentando reparar paquetes (dpkg/apt)...${N}"
-    apt_fix_if_needed
-    echo -e "${D}Reintentando:${N} ${cmd}"
-    if bash -lc "$cmd" 2>&1 | tee "$out"; then
-      rm -f "$out" 2>/dev/null || true
-      return 0
-    fi
-    echo ""
-    echo -e "${R}Comando falló:${N} $cmd"
-    echo "Últimas 200 líneas de salida:"
-    tail -n 200 "$out" || true
-    rm -f "$out" 2>/dev/null || true
-    return 1
   fi
+  spinner_stop "$spid"
+
+  # intento de reparación y reintento
+  apt_fix_if_needed
+
+  spid=$(spinner_start "$msg")
+  if bash -lc "$exec_cmd" >"$out" 2>&1; then
+    spinner_stop "$spid"
+    tail -n 5 "$out" | sed -n '1,5p' 2>/dev/null || true
+    rm -f "$out" 2>/dev/null || true
+    return 0
+  fi
+  spinner_stop "$spid"
+
+  # en caso de fallo, volcar salida para diagnóstico
+  echo ""
+  echo -e "${R}Comando falló:${N} $cmd"
+  echo "Salida (últimas 200 líneas):"
+  tail -n 200 "$out" || true
+  echo "Fin de salida."
+  rm -f "$out" 2>/dev/null || true
+  return 1
 }
 
 apt_update() {
   step "Actualizando repos (apt update)"
-  # ejecución directa y en primer plano para ver errores
+  # usar apt-get update sin -y
   if run_quiet "apt-get update"; then
     ok
   else
     fail
-    echo -e "${R}Error en apt-get update. Ejecuta manualmente: apt-get update${N}"
+    echo -e "${R}Error al ejecutar apt-get update. Ejecuta manualmente: ${C}apt-get update${N}"
     exit 1
   fi
 }
@@ -121,30 +211,41 @@ install_pkg() {
 install_any_of() {
   local label="$1"; shift
   local candidates=("$@")
+
   step "Instalando ${label}"
   for p in "${candidates[@]}"; do
     if run_quiet "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${p}"; then
-      ok; return 0
+      ok
+      return 0
     fi
   done
-  fail; return 1
+  fail
+  return 1
 }
 
 install_dependencies() {
-  sn_line; echo -e "${Y}${BOLD}Preparando sistema...${N}"; sn_line
+  sn_line
+  echo -e "${Y}${BOLD}Preparando sistema...${N}"
+  sn_line
+
   apt_fix_if_needed
   apt_update
   apt_upgrade
 
-  echo ""; sn_line; echo -e "${Y}${BOLD}Instalando dependencias${N}"; sn_line
+  echo ""
+  sn_line
+  echo -e "${Y}${BOLD}Instalando dependencias${N}"
+  sn_line
 
+  # Base útil
   install_pkg ca-certificates || true
   install_pkg curl || true
   install_pkg git || true
 
-  # toilet primero para el banner
+  # Instalar primero toilet (genera banner) para que quede disponible al finalizar
   install_pkg toilet || true
 
+  # Lista grande tipo Multi-Script (con compat)
   install_pkg sudo || true
   install_any_of "bsd utils" bsdextrautils bsdmainutils util-linux || true
   install_pkg zip || true
@@ -171,13 +272,19 @@ install_dependencies() {
   install_any_of "netcat" netcat-openbsd netcat-traditional netcat || true
   install_pkg net-tools || true
 
+  # Otras deps de banner/estética
   install_pkg figlet || true
   install_pkg cowsay || true
   install_any_of "lolcat" lolcat ruby-lolcat || true
 }
 
 install_project_into_etc() {
-  echo ""; sn_line; echo -e "${Y}${BOLD}Instalando script en /etc/SN${N}"; sn_line
+  echo ""
+  sn_line
+  echo -e "${Y}${BOLD}Instalando script en /etc/SN${N}"
+  sn_line
+
+  # Descarga/actualiza con git (más pro y actualizable)
   step "Creando carpeta /etc/SN"
   mkdir -p "${INSTALL_DIR}" && ok || { fail; exit 1; }
 
@@ -185,33 +292,48 @@ install_project_into_etc() {
     step "Actualizando proyecto (git pull)"
     (cd "${INSTALL_DIR}" && git fetch --all --prune && git reset --hard "origin/${REPO_BRANCH}") && ok || { fail; exit 1; }
   else
+    # Si hay algo ahí, lo respaldamos
     if [[ -n "$(ls -A "${INSTALL_DIR}" 2>/dev/null || true)" ]]; then
       step "Respaldando contenido previo"
       local bk="/etc/SN.backup.$(date +%Y%m%d-%H%M%S)"
       mv "${INSTALL_DIR}" "${bk}" && mkdir -p "${INSTALL_DIR}" && ok || { fail; exit 1; }
     fi
+
     step "Clonando proyecto desde GitHub"
     git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" &>/dev/null && ok || { fail; exit 1; }
   fi
 
+  # Verifica menu
   step "Verificando archivo menu"
   [[ -f "${MENU_PATH}" ]] && ok || { fail; echo -e "${Y}No existe:${N} ${C}${MENU_PATH}${N}"; exit 1; }
 }
 
 apply_permissions() {
-  echo ""; sn_line; echo -e "${Y}${BOLD}Aplicando permisos${N}"; sn_line
+  echo ""
+  sn_line
+  echo -e "${Y}${BOLD}Aplicando permisos${N}"
+  sn_line
+
   step "chmod +x menu"
   chmod +x "${MENU_PATH}" && ok || fail
+
   step "chmod +x *.sh"
   find "${INSTALL_DIR}" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null && ok || ok
+
   step "chmod +x *.py"
   find "${INSTALL_DIR}" -type f -name "*.py" -exec chmod +x {} \; 2>/dev/null && ok || ok
+
+  # Por si hay scripts sin extensión con shebang
   step "chmod +x (shebang)"
   find "${INSTALL_DIR}" -type f ! -name "*.*" -exec sh -lc 'head -n 1 "$1" | grep -q "^#!" && chmod +x "$1" || true' _ {} \; 2>/dev/null && ok || ok
 }
 
 create_root_only_wrappers() {
-  echo ""; sn_line; echo -e "${Y}${BOLD}Configurando accesos...${N}"; sn_line
+  echo ""
+  sn_line
+  echo -e "${Y}${BOLD}Configurando accesos...${N}"
+  sn_line
+
   step "Creando comando global sn"
   cat >/usr/local/bin/sn <<EOF
 #!/usr/bin/env bash
@@ -243,8 +365,14 @@ EOF
 
 ensure_root_bashrc_banner() {
   step "Agregando banner a /root/.bashrc"
-  local bashrc="/root/.bashrc"; touch "$bashrc"
-  if grep -q "SN_WELCOME_SHOWN" "$bashrc" 2>/dev/null; then ok; return 0; fi
+
+  local bashrc="/root/.bashrc"
+  touch "$bashrc"
+
+  if grep -q "SN_WELCOME_SHOWN" "$bashrc" 2>/dev/null; then
+    ok
+    return 0
+  fi
 
   cat >>"$bashrc" <<'EOF'
 
@@ -254,9 +382,18 @@ ensure_root_bashrc_banner() {
 if [[ $- == *i* ]]; then
   [[ -n "${SN_WELCOME_SHOWN:-}" ]] && return
   export SN_WELCOME_SHOWN=1
+
+  # limpiar pantalla para que solo se vea el banner
   clear
-  R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'
-  W='\033[1;37m'; N='\033[0m'; BOLD='\033[1m'
+
+  R='\033[0;31m'
+  G='\033[0;32m'
+  Y='\033[1;33m'
+  C='\033[0;36m'
+  W='\033[1;37m'
+  N='\033[0m'
+  BOLD='\033[1m'
+
   echo ""
   if command -v toilet >/dev/null 2>&1; then
     toilet -f slant -F metal "SinNombre" 2>/dev/null || true
@@ -273,13 +410,18 @@ EOF
 }
 
 finish() {
-  echo ""; sn_line; echo -e "${G}${BOLD}Instalación finalizada.${N}"; sn_line
-  echo ""; echo -e "${W}Prueba ahora:${N} ${C}sn${N}"; echo ""
+  echo ""
+  sn_line
+  echo -e "${G}${BOLD}Instalación finalizada.${N}"
+  sn_line
+  echo ""
+  echo -e "${W}Prueba ahora:${N} ${C}sn${N}"
+  echo ""
 }
 
 main() {
   require_root
-  command -v apt-get >/dev/null 2>&1 || { echo "Se requiere apt-get"; exit 1; }
+  command -v apt-get >/dev/null 2>&1 || exit 1
 
   clear
   banner
