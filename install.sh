@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # =========================================================
-# SinNombre - Installer (simple, sin animaciones)
+# SinNombre - Installer Profesional (Modo Discreto)
 # Muestra lista de dependencias antes de instalar
-# Asegura que al iniciar la VPS solo se vea el banner (crea /root/.hushlogin)
+# Configura inicio limpio con solo el banner visible
 # =========================================================
 
 REPO_OWNER="SINNOMBRE22"
@@ -15,13 +15,15 @@ REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 INSTALL_DIR="/etc/SN"
 MENU_PATH="${INSTALL_DIR}/menu"
 
+# Colores (manteniendo tu esquema)
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'
 W='\033[1;37m'; N='\033[0m'; D='\033[2m'; BOLD='\033[1m'
 
+# Línea decorativa
 sn_line() { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
 
 # ----------------------------
-# Args
+# Argumentos
 # ----------------------------
 START_AFTER=false
 for arg in "$@"; do
@@ -30,12 +32,15 @@ for arg in "$@"; do
   esac
 done
 
+# ----------------------------
+# Funciones Principales
+# ----------------------------
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     clear
     sn_line
-    echo -e "${Y}Debes ejecutar como root.${N}"
-    echo -e "${W}Usa:${N} ${C}sudo bash install.sh${N}"
+    echo -e "${Y}⚠️  Permisos insuficientes${N}"
+    echo -e "${W}Ejecuta con:${N} ${C}sudo bash install.sh${N}"
     sn_line
     exit 1
   fi
@@ -48,127 +53,98 @@ banner() {
   else
     echo -e "${C}${BOLD}SinNombre${N}"
   fi
-  echo -e "${D}Instalador de dependencias${N}"
+  echo -e "${D}Instalador profesional${N}"
   echo ""
 }
 
 step() {
   local msg="$1"
-  printf " ${C}•${N} %b" "${W}${msg}${N}"
+  printf " ${C}›${N} %b" "${W}${msg}${N}"
   local pad=$(( 30 - ${#msg} ))
   (( pad < 1 )) && pad=1
   printf "%*s" "$pad" "" | tr ' ' '.'
   printf " "
 }
-ok()   { echo -e "${G}[OK]${N}"; }
-fail() { echo -e "${R}[FAIL]${N}"; }
+ok()   { echo -e "${G}✓${N}"; }
+fail() { echo -e "${R}✗${N}"; }
 
-apt_fix_if_needed() {
-  dpkg --configure -a || true
-  apt-get -f install -y || true
-}
-
-# ---------- Lista de dependencias a mostrar ----------
+# ----------------------------
+# Lista de Dependencias
+# ----------------------------
 show_dependency_list() {
   echo ""
   sn_line
-  echo -e "${Y}${BOLD}Dependencias que se instalarán (resumen):${N}"
+  echo -e "${Y}${BOLD}📦 Dependencias requeridas:${N}"
   sn_line
-  local i=1
-  printf "%2d) %s\n" $((i++)) "ca-certificates"
-  printf "%2d) %s\n" $((i++)) "curl"
-  printf "%2d) %s\n" $((i++)) "git"
-  printf "%2d) %s\n" $((i++)) "toilet (banner)"
-  printf "%2d) %s\n" $((i++)) "sudo"
-  printf "%2d) %s\n" $((i++)) "bsd utils (bsdextrautils | bsdmainutils | util-linux)"
-  printf "%2d) %s\n" $((i++)) "zip"
-  printf "%2d) %s\n" $((i++)) "unzip"
-  printf "%2d) %s\n" $((i++)) "ufw"
-  printf "%2d) %s\n" $((i++)) "python (python-is-python3 | python3)"
-  printf "%2d) %s\n" $((i++)) "python3"
-  printf "%2d) %s\n" $((i++)) "python3-pip"
-  printf "%2d) %s\n" $((i++)) "openssl"
-  printf "%2d) %s\n" $((i++)) "screen"
-  printf "%2d) %s\n" $((i++)) "cron (cron | cronie)"
-  printf "%2d) %s\n" $((i++)) "iptables"
-  printf "%2d) %s\n" $((i++)) "lsof"
-  printf "%2d) %s\n" $((i++)) "nano"
-  printf "%2d) %s\n" $((i++)) "at"
-  printf "%2d) %s\n" $((i++)) "mlocate"
-  printf "%2d) %s\n" $((i++)) "gawk"
-  printf "%2d) %s\n" $((i++)) "grep"
-  printf "%2d) %s\n" $((i++)) "bc"
-  printf "%2d) %s\n" $((i++)) "jq"
-  printf "%2d) %s\n" $((i++)) "nodejs"
-  printf "%2d) %s\n" $((i++)) "npm"
-  printf "%2d) %s\n" $((i++)) "socat"
-  printf "%2d) %s\n" $((i++)) "netcat (netcat-openbsd | netcat-traditional | netcat)"
-  printf "%2d) %s\n" $((i++)) "net-tools"
-  printf "%2d) %s\n" $((i++)) "figlet"
-  printf "%2d) %s\n" $((i++)) "cowsay"
-  printf "%2d) %s\n" $((i++)) "lolcat (lolcat | ruby-lolcat)"
+  
+  local deps=(
+    "Sistema base: ca-certificates, curl, git"
+    "Interfaz: toilet, figlet, cowsay, lolcat"
+    "Utilidades: sudo, zip, unzip, nano, screen"
+    "Redes: ufw, iptables, net-tools, socat, netcat"
+    "Lenguajes: python3, python3-pip, nodejs, npm, jq"
+    "Servicios: openssl, cron, at, lsof, mlocate"
+    "Herramientas: gawk, grep, bc, bsdutils"
+  )
+  
+  for dep in "${deps[@]}"; do
+    echo -e " ${C}•${N} ${W}${dep}${N}"
+  done
+  
   echo ""
   sn_line
-  echo -e "${D}Se procederá a instalar las dependencias en el orden mostrado. Si ya están instaladas, apt las omitirá o actualizará.${N}"
+  echo -e "${D}Se instalarán automáticamente si no están presentes${N}"
   sn_line
   echo ""
 }
 
-# Ejecuta comando en primer plano y muestra salida en tiempo real.
-run_quiet() {
-  local cmd="$*"
-  local out
-  out="$(mktemp /tmp/sninout.XXXXXX)" || out="/tmp/sninout.$$"
+# ----------------------------
+# Gestión de Paquetes (Discreta)
+# ----------------------------
+apt_fix_if_needed() {
+  dpkg --configure -a >/dev/null 2>&1 || true
+  apt-get -f install -y >/dev/null 2>&1 || true
+}
 
-  echo ""
-  echo -e "${D}--- Ejecutando:${N} ${cmd}"
-  if bash -lc "$cmd" 2>&1 | tee "$out"; then
-    rm -f "$out" 2>/dev/null || true
+run_discreet() {
+  local cmd="$1"
+  local log="/tmp/sn_install.log"
+  
+  # Solo muestra errores si ocurren
+  if bash -lc "${cmd}" >>"${log}" 2>&1; then
     return 0
+  else
+    # Reintento con reparación
+    apt_fix_if_needed
+    if bash -lc "${cmd}" >>"${log}" 2>&1; then
+      return 0
+    fi
+    return 1
   fi
-
-  echo ""
-  echo -e "${Y}Intentando reparar paquetes (dpkg --configure -a / apt -f)...${N}"
-  apt_fix_if_needed
-
-  echo -e "${D}Reintentando:${N} ${cmd}"
-  if bash -lc "$cmd" 2>&1 | tee "$out"; then
-    rm -f "$out" 2>/dev/null || true
-    return 0
-  fi
-
-  echo ""
-  echo -e "${R}Comando falló:${N} $cmd"
-  echo "Salida (últimas 200 líneas):"
-  tail -n 200 "$out" || true
-  echo "Fin de salida."
-  rm -f "$out" 2>/dev/null || true
-  return 1
 }
 
 apt_update() {
-  step "Actualizando repos (apt update)"
-  if run_quiet "apt-get update"; then
+  step "Sincronizando repositorios"
+  if run_discreet "apt-get update"; then
     ok
   else
     fail
-    echo -e "${R}Error en apt-get update. Ejecuta manualmente: ${C}apt-get update${N}"
-    exit 1
+    return 1
   fi
 }
 
 apt_upgrade() {
-  step "Aplicando upgrade básico"
-  run_quiet "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y" && ok || fail
+  step "Actualizando sistema base"
+  run_discreet "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y" && ok || fail
 }
 
 install_pkg() {
   local pkg="$1"
   step "Instalando ${pkg}"
-  if run_quiet "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${pkg}"; then
-    ok; return 0
+  if run_discreet "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${pkg}"; then
+    ok
   else
-    fail; return 1
+    fail
   fi
 }
 
@@ -176,78 +152,79 @@ install_any_of() {
   local label="$1"; shift
   local candidates=("$@")
   step "Instalando ${label}"
+  
   for p in "${candidates[@]}"; do
-    if run_quiet "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${p}"; then
-      ok; return 0
-    fi
-  done
-  fail; return 1
-}
-
-# -------------------------
-# Asegurar banner al login y suprimir MOTD
-# -------------------------
-ensure_root_login_banner() {
-  step "Asegurando banner en /root/.bashrc y /root/.profile y creando /root/.hushlogin"
-  local bashrc="/root/.bashrc"
-  local profile="/root/.profile"
-  local hush="/root/.hushlogin"
-
-  # Crear hushlogin para suprimir MOTD y last login
-  if [[ ! -f "$hush" ]]; then
-    touch "$hush" && chmod 600 "$hush"
-  fi
-
-  # Function to append banner snippet if not present
-  append_banner_if_missing() {
-    local file="$1"
-    if grep -q "SN_WELCOME_SHOWN" "$file" 2>/dev/null; then
+    if run_discreet "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${p}"; then
+      ok
       return 0
     fi
+  done
+  fail
+  return 1
+}
 
-    cat >>"$file" <<'EOF'
+# ----------------------------
+# Configuración de Banner Limpio
+# ----------------------------
+ensure_clean_banner() {
+  step "Configurando inicio limpio"
+  
+  # Crear archivo para silenciar mensajes del sistema
+  touch /root/.hushlogin >/dev/null 2>&1
+  
+  # Configurar .bashrc para limpiar pantalla y mostrar banner
+  local bashrc="/root/.bashrc"
+  local marker="# === SinNombre Banner === #"
+  
+  if ! grep -q "${marker}" "${bashrc}" 2>/dev/null; then
+    cat >>"${bashrc}" <<'EOF'
 
-# ============================
-# SinNombre - Welcome banner
-# ============================
-if [[ $- == *i* ]]; then
-  [[ -n "${SN_WELCOME_SHOWN:-}" ]] && return
-  export SN_WELCOME_SHOWN=1
-
+# === SinNombre Banner === #
+if [[ $- == *i* ]] && [[ -z "${SN_BANNER_SHOWN:-}" ]]; then
+  export SN_BANNER_SHOWN=1
+  
+  # Limpiar pantalla completamente
   clear
-
-  R='\033[0;31m'
-  G='\033[0;32m'
-  Y='\033[1;33m'
-  C='\033[0;36m'
-  W='\033[1;37m'
-  N='\033[0m'
-  BOLD='\033[1m'
-
+  
+  # Mostrar banner
   echo ""
   if command -v toilet >/dev/null 2>&1; then
-    toilet -f slant -F metal "SinNombre" 2>/dev/null || true
+    toilet -f slant -F metal "SinNombre" 2>/dev/null || echo "=== SinNombre ==="
   else
-    echo -e "${C}${BOLD}SinNombre${N}"
+    echo -e "\033[0;36m\033[1mSinNombre\033[0m"
   fi
-  echo -e "${W}Creador:${N} ${C}@SIN_NOMBRE22${N}  ${Y}(en desarrollo)${N}"
-  echo -e "${W}Para iniciar digite:${N} ${G}menu${N} ${W}o${N} ${G}sn${N}"
+  echo -e "\033[2mSistema profesional\033[0m"
+  echo ""
+  echo -e "\033[1;37mPara iniciar digite:\033[0m \033[0;32mmenu\033[0m \033[1;37mo\033[0m \033[0;32msn\033[0m"
   echo ""
 fi
 EOF
-  }
+  fi
+  
+  # Configurar .profile también
+  local profile="/root/.profile"
+  if [[ -f "${profile}" ]] && ! grep -q "${marker}" "${profile}" 2>/dev/null; then
+    cat >>"${profile}" <<'EOF'
 
-  # Añadir a ambos archivos (perfil y bashrc) si faltan
-  touch "$bashrc" "$profile"
-  append_banner_if_missing "$bashrc"
-  append_banner_if_missing "$profile"
-
+# === SinNombre Banner === #
+if [[ $- == *i* ]] && [[ -z "${SN_BANNER_SHOWN:-}" ]]; then
+  export SN_BANNER_SHOWN=1
+  clear
+  # El banner se carga desde .bashrc
+fi
+EOF
+  fi
+  
   ok
 }
 
+# ----------------------------
+# Instalación de Dependencias
+# ----------------------------
 install_dependencies() {
+  echo ""
   sn_line
-  echo -e "${Y}${BOLD}Preparando sistema...${N}"
+  echo -e "${Y}${BOLD}🔧 Preparando sistema...${N}"
   sn_line
 
   apt_fix_if_needed
@@ -256,157 +233,159 @@ install_dependencies() {
 
   echo ""
   sn_line
-  echo -e "${Y}${BOLD}Instalando dependencias${N}"
+  echo -e "${Y}${BOLD}📥 Instalando componentes${N}"
   sn_line
 
-  install_pkg ca-certificates || true
-  install_pkg curl || true
-  install_pkg git || true
+  # Instalación en bloques temáticos
+  echo -e "\n${C}📦 Sistema base${N}"
+  install_pkg ca-certificates
+  install_pkg curl
+  install_pkg git
+  install_pkg toilet
 
-  # toilet primero para que el banner pueda usarse inmediatamente
-  install_pkg toilet || true
+  echo -e "\n${C}🛠️  Utilidades esenciales${N}"
+  install_pkg sudo
+  install_any_of "bsd utils" bsdextrautils bsdmainutils util-linux
+  install_pkg zip
+  install_pkg unzip
+  install_pkg ufw
+  install_any_of "python" python-is-python3 python3
+  install_pkg python3-pip
+  install_pkg openssl
+  install_pkg screen
+  install_any_of "cron" cron cronie
+  install_pkg iptables
+  install_pkg lsof
+  install_pkg nano
+  install_pkg at
+  install_pkg mlocate
+  install_pkg gawk
+  install_pkg grep
+  install_pkg bc
 
-  install_pkg sudo || true
-  install_any_of "bsd utils" bsdextrautils bsdmainutils util-linux || true
-  install_pkg zip || true
-  install_pkg unzip || true
-  install_pkg ufw || true
-  install_any_of "python (compat)" python-is-python3 python3 || true
-  install_pkg python3 || true
-  install_pkg python3-pip || true
-  install_pkg openssl || true
-  install_pkg screen || true
-  install_any_of "cron" cron cronie || true
-  install_pkg iptables || true
-  install_pkg lsof || true
-  install_pkg nano || true
-  install_pkg at || true
-  install_pkg mlocate || true
-  install_pkg gawk || true
-  install_pkg grep || true
-  install_pkg bc || true
-  install_pkg jq || true
-  install_pkg nodejs || true
-  install_pkg npm || true
-  install_pkg socat || true
-  install_any_of "netcat" netcat-openbsd netcat-traditional netcat || true
-  install_pkg net-tools || true
+  echo -e "\n${C}🌐 Componentes de red${N}"
+  install_pkg jq
+  install_pkg nodejs
+  install_pkg npm
+  install_pkg socat
+  install_any_of "netcat" netcat-openbsd netcat-traditional netcat
+  install_pkg net-tools
 
-  install_pkg figlet || true
-  install_pkg cowsay || true
-  install_any_of "lolcat" lolcat ruby-lolcat || true
+  echo -e "\n${C}🎨 Elementos visuales${N}"
+  install_pkg figlet
+  install_pkg cowsay
+  install_any_of "lolcat" lolcat ruby-lolcat
 }
 
-install_project_into_etc() {
+# ----------------------------
+# Instalación del Proyecto
+# ----------------------------
+install_project() {
   echo ""
   sn_line
-  echo -e "${Y}${BOLD}Instalando script en /etc/SN${N}"
+  echo -e "${Y}${BOLD}🚀 Instalando aplicación${N}"
   sn_line
 
-  step "Creando carpeta /etc/SN"
+  step "Preparando entorno"
   mkdir -p "${INSTALL_DIR}" && ok || { fail; exit 1; }
 
   if [[ -d "${INSTALL_DIR}/.git" ]]; then
-    step "Actualizando proyecto (git pull)"
+    step "Actualizando versión"
     (cd "${INSTALL_DIR}" && git fetch --all --prune && git reset --hard "origin/${REPO_BRANCH}") && ok || { fail; exit 1; }
   else
-    if [[ -n "$(ls -A "${INSTALL_DIR}" 2>/dev/null || true)" ]]; then
-      step "Respaldando contenido previo"
-      local bk="/etc/SN.backup.$(date +%Y%m%d-%H%M%S)"
-      mv "${INSTALL_DIR}" "${bk}" && mkdir -p "${INSTALL_DIR}" && ok || { fail; exit 1; }
-    fi
-    step "Clonando proyecto desde GitHub"
-    git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" &>/dev/null && ok || { fail; exit 1; }
+    step "Descargando componentes"
+    git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" >/dev/null 2>&1 && ok || { fail; exit 1; }
   fi
 
-  step "Verificando archivo menu"
-  [[ -f "${MENU_PATH}" ]] && ok || { fail; echo -e "${Y}No existe:${N} ${C}${MENU_PATH}${N}"; exit 1; }
+  step "Verificando integridad"
+  [[ -f "${MENU_PATH}" ]] && ok || { fail; exit 1; }
 }
 
 apply_permissions() {
   echo ""
   sn_line
-  echo -e "${Y}${BOLD}Aplicando permisos${N}"
+  echo -e "${Y}${BOLD}🔐 Configurando permisos${N}"
   sn_line
 
-  step "chmod +x menu"
+  step "Habilitando ejecución"
   chmod +x "${MENU_PATH}" && ok || fail
-
-  step "chmod +x *.sh"
-  find "${INSTALL_DIR}" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null && ok || ok
-
-  step "chmod +x *.py"
-  find "${INSTALL_DIR}" -type f -name "*.py" -exec chmod +x {} \; 2>/dev/null && ok || ok
-
-  step "chmod +x (shebang)"
-  find "${INSTALL_DIR}" -type f ! -name "*.*" -exec sh -lc 'head -n 1 "$1" | grep -q "^#!" && chmod +x "$1" || true' _ {} \; 2>/dev/null && ok || ok
+  
+  step "Configurando scripts"
+  find "${INSTALL_DIR}" -type f \( -name "*.sh" -o -name "*.py" \) -exec chmod +x {} \; 2>/dev/null && ok || ok
 }
 
-create_root_only_wrappers() {
+setup_commands() {
   echo ""
   sn_line
-  echo -e "${Y}${BOLD}Configurando accesos...${N}"
+  echo -e "${Y}${BOLD}⚡ Configurando accesos${N}"
   sn_line
 
-  step "Creando comando global sn"
-  cat >/usr/local/bin/sn <<EOF
+  step "Creando comando 'sn'"
+  cat >/usr/local/bin/sn <<'EOF'
 #!/usr/bin/env bash
-if [[ "\${EUID:-\$(id -u)}" -ne 0 ]]; then
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${R}Acceso denegado.${N} ${Y}Ejecuta en root o con sudo.${N}"
-  echo -e "${W}Usa:${N} ${C}sudo sn${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  echo "Acceso restringido. Use: sudo sn"
   exit 1
 fi
-exec "${MENU_PATH}" "\$@"
+exec /etc/SN/menu "$@"
 EOF
   chmod +x /usr/local/bin/sn && ok || fail
 
-  step "Creando comando global menu"
-  cat >/usr/local/bin/menu <<EOF
+  step "Creando comando 'menu'"
+  cat >/usr/local/bin/menu <<'EOF'
 #!/usr/bin/env bash
-if [[ "\${EUID:-\$(id -u)}" -ne 0 ]]; then
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${R}Acceso denegado.${N} ${Y}Ejecuta en root o con sudo.${N}"
-  echo -e "${W}Usa:${N} ${C}sudo menu${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  echo "Acceso restringido. Use: sudo menu"
   exit 1
 fi
-exec "${MENU_PATH}" "\$@"
+exec /etc/SN/menu "$@"
 EOF
   chmod +x /usr/local/bin/menu && ok || fail
 }
 
+# ----------------------------
+# Finalización
+# ----------------------------
 finish() {
   echo ""
   sn_line
-  echo -e "${G}${BOLD}Instalación finalizada.${N}"
+  echo -e "${G}${BOLD}✅ Instalación completada${N}"
   sn_line
   echo ""
-  echo -e "${W}Prueba ahora:${N} ${C}sn${N}"
+  echo -e "${W}Comandos disponibles:${N}"
+  echo -e "  ${C}sn${N}    - Acceso principal"
+  echo -e "  ${C}menu${N}  - Menú del sistema"
+  echo ""
+  echo -e "${D}Reinicia la sesión o ejecuta:${N}"
+  echo -e "  ${C}source ~/.bashrc${N}"
   echo ""
 }
 
+# ----------------------------
+# Función Principal
+# ----------------------------
 main() {
   require_root
-  command -v apt-get >/dev/null 2>&1 || { echo "Se requiere apt-get"; exit 1; }
-
+  
   clear
   banner
-
-  # Mostrar lista de dependencias antes de instalar
+  
+  # Mostrar resumen de dependencias
   show_dependency_list
-
+  
+  # Proceso de instalación
   install_dependencies
-  install_project_into_etc
+  install_project
   apply_permissions
-  create_root_only_wrappers
-  ensure_root_login_banner
+  setup_commands
+  ensure_clean_banner
   finish
 
+  # Iniciar automáticamente si se solicita
   if [[ "${START_AFTER}" == "true" ]]; then
     exec "${MENU_PATH}"
   fi
 }
 
+# Ejecutar
 main "$@"
