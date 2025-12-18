@@ -65,7 +65,7 @@ banner() {
 step() {
   local msg="$1"
   printf " ${C}•${N} %b" "${W}${msg}${N}"
-  local pad=$(( 35 - ${#msg} ))   # ancho reducido para líneas más cortas
+  local pad=$(( 30 - ${#msg} ))   # ancho reducido para líneas más cortas
   (( pad < 1 )) && pad=1
   printf "%*s" "$pad" "" | tr ' ' '.'
   printf " "
@@ -78,31 +78,7 @@ apt_fix_if_needed() {
   apt-get -f install -y &>/dev/null || true
 }
 
-# --- Spinner / animación ---
-spinner_loop() {
-  local msg="$1"
-  local frames=( '▁' '▂' '▃' '▄' '▅' '▆' '▇' '█' '▇' '▆' '▅' '▄' '▃' '▂' )
-  while true; do
-    for f in "${frames[@]}"; do
-      printf "\r ${C}%s${N} %s" "${msg}" "${f}"
-      sleep 0.07
-    done
-  done
-}
-spinner_start() {
-  # devuelve PID del spinner background
-  spinner_loop "$1" & echo $!
-}
-spinner_stop() {
-  local pid="$1"
-  if [[ -n "${pid:-}" ]] && kill -0 "$pid" >/dev/null 2>&1; then
-    kill "$pid" >/dev/null 2>&1 || true
-    wait "$pid" 2>/dev/null || true
-  fi
-  printf "\r"
-}
 # -------------------------------------
-
 # Espera por locks de apt/dpkg (evita quedarse indefinido)
 wait_for_apt() {
   local waited=0
@@ -116,16 +92,17 @@ wait_for_apt() {
       echo -e "${Y}Advertencia:${N} apt/dpkg sigue bloqueado después de ${max_wait}s. Se intentará continuar."
       return 1
     fi
-    local sp
-    sp=$(spinner_start "$msg")
+    printf "\r ${C}%s${N}" "$msg"
     sleep "$sleep_step"
-    spinner_stop "$sp"
     waited=$((waited + sleep_step))
   done
+  printf "\r"
   return 0
 }
+# -------------------------------------
 
-# Ejecuta comando con spinner, guarda salida para diagnóstico y aplica timeout si existe
+# run_quiet: ejecuta el comando en primer plano, muestra salida en tiempo real,
+# usa timeout si está disponible y guarda salida en temporal para volcar en fallo.
 run_quiet() {
   local cmd="$*"
   local msg="$(printf '%s' "$cmd" | cut -c1-36)"
@@ -135,41 +112,36 @@ run_quiet() {
   # si hay locks, esperar (pero no bloquear indefinidamente)
   wait_for_apt || true
 
-  local use_timeout=false
-  if command -v timeout >/dev/null 2>&1; then
-    use_timeout=true
-  fi
-
   local exec_cmd
-  if $use_timeout; then
+  if command -v timeout >/dev/null 2>&1; then
     # timeout razonable por comando (300s)
-    exec_cmd="timeout 300s bash -lc \"$cmd\""
+    exec_cmd=(timeout 300s bash -lc "$cmd")
   else
-    exec_cmd="bash -lc \"$cmd\""
+    exec_cmd=(bash -lc "$cmd")
   fi
 
-  local spid
-  spid=$(spinner_start "$msg")
-  if bash -lc "$exec_cmd" >"$out" 2>&1; then
-    spinner_stop "$spid"
-    # mostrar últimas líneas útiles (silencioso por defecto, muestra resumen)
-    tail -n 5 "$out" | sed -n '1,5p' 2>/dev/null || true
+  echo ""    # salto visual antes de la salida del comando
+  echo -e "${D}--- Salida: ${cmd} ---${N}"
+  # ejecutar y mostrar en tiempo real, guardar en archivo
+  if "${exec_cmd[@]}" 2>&1 | tee "$out"; then
+    echo -e "${D}--- Fin salida ---${N}"
+    tail -n 3 "$out" 2>/dev/null || true
     rm -f "$out" 2>/dev/null || true
     return 0
   fi
-  spinner_stop "$spid"
 
   # intento de reparación y reintento
+  echo ""
+  echo -e "${Y}Intentando reparación (dpkg --configure -a / apt -f)...${N}"
   apt_fix_if_needed
 
-  spid=$(spinner_start "$msg")
-  if bash -lc "$exec_cmd" >"$out" 2>&1; then
-    spinner_stop "$spid"
-    tail -n 5 "$out" | sed -n '1,5p' 2>/dev/null || true
+  echo -e "${D}Reintentando: ${cmd}${N}"
+  if "${exec_cmd[@]}" 2>&1 | tee "$out"; then
+    echo -e "${D}--- Fin salida (2º intento) ---${N}"
+    tail -n 3 "$out" 2>/dev/null || true
     rm -f "$out" 2>/dev/null || true
     return 0
   fi
-  spinner_stop "$spid"
 
   # en caso de fallo, volcar salida para diagnóstico
   echo ""
@@ -183,7 +155,7 @@ run_quiet() {
 
 apt_update() {
   step "Actualizando repos (apt update)"
-  # usar apt-get update sin -y
+  # ejecutar apt-get update (no -y)
   if run_quiet "apt-get update"; then
     ok
   else
