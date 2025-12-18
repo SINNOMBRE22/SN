@@ -3,11 +3,8 @@ set -euo pipefail
 
 # =========================================================
 # SinNombre - Installer (simple, sin animaciones)
-# - Instala dependencias
-# - Descarga e instala el proyecto en: /etc/SN
-# - chmod +x menu + *.sh + *.py
-# - Comandos globales: sn y menu (root-only)
-# - Banner en /root/.bashrc (root), limpia pantalla
+# Muestra lista de dependencias antes de instalar
+# Asegura que al iniciar la VPS solo se vea el banner (crea /root/.hushlogin)
 # =========================================================
 
 REPO_OWNER="SINNOMBRE22"
@@ -58,7 +55,7 @@ banner() {
 step() {
   local msg="$1"
   printf " ${C}•${N} %b" "${W}${msg}${N}"
-  local pad=$(( 30 - ${#msg} ))   # padding reducido para líneas más cortas
+  local pad=$(( 30 - ${#msg} ))
   (( pad < 1 )) && pad=1
   printf "%*s" "$pad" "" | tr ' ' '.'
   printf " "
@@ -71,22 +68,65 @@ apt_fix_if_needed() {
   apt-get -f install -y || true
 }
 
+# ---------- Lista de dependencias a mostrar ----------
+show_dependency_list() {
+  echo ""
+  sn_line
+  echo -e "${Y}${BOLD}Dependencias que se instalarán (resumen):${N}"
+  sn_line
+  local i=1
+  printf "%2d) %s\n" $((i++)) "ca-certificates"
+  printf "%2d) %s\n" $((i++)) "curl"
+  printf "%2d) %s\n" $((i++)) "git"
+  printf "%2d) %s\n" $((i++)) "toilet (banner)"
+  printf "%2d) %s\n" $((i++)) "sudo"
+  printf "%2d) %s\n" $((i++)) "bsd utils (bsdextrautils | bsdmainutils | util-linux)"
+  printf "%2d) %s\n" $((i++)) "zip"
+  printf "%2d) %s\n" $((i++)) "unzip"
+  printf "%2d) %s\n" $((i++)) "ufw"
+  printf "%2d) %s\n" $((i++)) "python (python-is-python3 | python3)"
+  printf "%2d) %s\n" $((i++)) "python3"
+  printf "%2d) %s\n" $((i++)) "python3-pip"
+  printf "%2d) %s\n" $((i++)) "openssl"
+  printf "%2d) %s\n" $((i++)) "screen"
+  printf "%2d) %s\n" $((i++)) "cron (cron | cronie)"
+  printf "%2d) %s\n" $((i++)) "iptables"
+  printf "%2d) %s\n" $((i++)) "lsof"
+  printf "%2d) %s\n" $((i++)) "nano"
+  printf "%2d) %s\n" $((i++)) "at"
+  printf "%2d) %s\n" $((i++)) "mlocate"
+  printf "%2d) %s\n" $((i++)) "gawk"
+  printf "%2d) %s\n" $((i++)) "grep"
+  printf "%2d) %s\n" $((i++)) "bc"
+  printf "%2d) %s\n" $((i++)) "jq"
+  printf "%2d) %s\n" $((i++)) "nodejs"
+  printf "%2d) %s\n" $((i++)) "npm"
+  printf "%2d) %s\n" $((i++)) "socat"
+  printf "%2d) %s\n" $((i++)) "netcat (netcat-openbsd | netcat-traditional | netcat)"
+  printf "%2d) %s\n" $((i++)) "net-tools"
+  printf "%2d) %s\n" $((i++)) "figlet"
+  printf "%2d) %s\n" $((i++)) "cowsay"
+  printf "%2d) %s\n" $((i++)) "lolcat (lolcat | ruby-lolcat)"
+  echo ""
+  sn_line
+  echo -e "${D}Se procederá a instalar las dependencias en el orden mostrado. Si ya están instaladas, apt las omitirá o actualizará.${N}"
+  sn_line
+  echo ""
+}
+
 # Ejecuta comando en primer plano y muestra salida en tiempo real.
-# Guarda salida en temporal para volcar en caso de error.
 run_quiet() {
   local cmd="$*"
   local out
   out="$(mktemp /tmp/sninout.XXXXXX)" || out="/tmp/sninout.$$"
 
-  echo ""    # separación visual
+  echo ""
   echo -e "${D}--- Ejecutando:${N} ${cmd}"
-  # Ejecuta y muestra salida en tiempo real con tee
   if bash -lc "$cmd" 2>&1 | tee "$out"; then
     rm -f "$out" 2>/dev/null || true
     return 0
   fi
 
-  # intentar reparar y reintentar una vez
   echo ""
   echo -e "${Y}Intentando reparar paquetes (dpkg --configure -a / apt -f)...${N}"
   apt_fix_if_needed
@@ -97,7 +137,6 @@ run_quiet() {
     return 0
   fi
 
-  # en caso de fallo, volcar salida parcial para diagnóstico
   echo ""
   echo -e "${R}Comando falló:${N} $cmd"
   echo "Salida (últimas 200 líneas):"
@@ -145,6 +184,67 @@ install_any_of() {
   fail; return 1
 }
 
+# -------------------------
+# Asegurar banner al login y suprimir MOTD
+# -------------------------
+ensure_root_login_banner() {
+  step "Asegurando banner en /root/.bashrc y /root/.profile y creando /root/.hushlogin"
+  local bashrc="/root/.bashrc"
+  local profile="/root/.profile"
+  local hush="/root/.hushlogin"
+
+  # Crear hushlogin para suprimir MOTD y last login
+  if [[ ! -f "$hush" ]]; then
+    touch "$hush" && chmod 600 "$hush"
+  fi
+
+  # Function to append banner snippet if not present
+  append_banner_if_missing() {
+    local file="$1"
+    if grep -q "SN_WELCOME_SHOWN" "$file" 2>/dev/null; then
+      return 0
+    fi
+
+    cat >>"$file" <<'EOF'
+
+# ============================
+# SinNombre - Welcome banner
+# ============================
+if [[ $- == *i* ]]; then
+  [[ -n "${SN_WELCOME_SHOWN:-}" ]] && return
+  export SN_WELCOME_SHOWN=1
+
+  clear
+
+  R='\033[0;31m'
+  G='\033[0;32m'
+  Y='\033[1;33m'
+  C='\033[0;36m'
+  W='\033[1;37m'
+  N='\033[0m'
+  BOLD='\033[1m'
+
+  echo ""
+  if command -v toilet >/dev/null 2>&1; then
+    toilet -f slant -F metal "SinNombre" 2>/dev/null || true
+  else
+    echo -e "${C}${BOLD}SinNombre${N}"
+  fi
+  echo -e "${W}Creador:${N} ${C}@SIN_NOMBRE22${N}  ${Y}(en desarrollo)${N}"
+  echo -e "${W}Para iniciar digite:${N} ${G}menu${N} ${W}o${N} ${G}sn${N}"
+  echo ""
+fi
+EOF
+  }
+
+  # Añadir a ambos archivos (perfil y bashrc) si faltan
+  touch "$bashrc" "$profile"
+  append_banner_if_missing "$bashrc"
+  append_banner_if_missing "$profile"
+
+  ok
+}
+
 install_dependencies() {
   sn_line
   echo -e "${Y}${BOLD}Preparando sistema...${N}"
@@ -159,7 +259,6 @@ install_dependencies() {
   echo -e "${Y}${BOLD}Instalando dependencias${N}"
   sn_line
 
-  # Base útil
   install_pkg ca-certificates || true
   install_pkg curl || true
   install_pkg git || true
@@ -167,7 +266,6 @@ install_dependencies() {
   # toilet primero para que el banner pueda usarse inmediatamente
   install_pkg toilet || true
 
-  # Resto de dependencias
   install_pkg sudo || true
   install_any_of "bsd utils" bsdextrautils bsdmainutils util-linux || true
   install_pkg zip || true
@@ -194,7 +292,6 @@ install_dependencies() {
   install_any_of "netcat" netcat-openbsd netcat-traditional netcat || true
   install_pkg net-tools || true
 
-  # Estética opcional
   install_pkg figlet || true
   install_pkg cowsay || true
   install_any_of "lolcat" lolcat ruby-lolcat || true
@@ -280,45 +377,6 @@ EOF
   chmod +x /usr/local/bin/menu && ok || fail
 }
 
-ensure_root_bashrc_banner() {
-  step "Agregando banner a /root/.bashrc"
-  local bashrc="/root/.bashrc"
-  touch "$bashrc"
-
-  if grep -q "SN_WELCOME_SHOWN" "$bashrc" 2>/dev/null; then
-    ok
-    return 0
-  fi
-
-  cat >>"$bashrc" <<'EOF'
-
-# ============================
-# SinNombre - Welcome banner
-# ============================
-if [[ $- == *i* ]]; then
-  [[ -n "${SN_WELCOME_SHOWN:-}" ]] && return
-  export SN_WELCOME_SHOWN=1
-
-  clear
-
-  R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'
-  W='\033[1;37m'; N='\033[0m'; BOLD='\033[1m'
-
-  echo ""
-  if command -v toilet >/dev/null 2>&1; then
-    toilet -f slant -F metal "SinNombre" 2>/dev/null || true
-  else
-    echo -e "${C}${BOLD}SinNombre${N}"
-  fi
-  echo -e "${W}Creador:${N} ${C}@SIN_NOMBRE22${N}  ${Y}(en desarrollo)${N}"
-  echo -e "${W}Para iniciar digite:${N} ${G}menu${N} ${W}o${N} ${G}sn${N}"
-  echo ""
-fi
-EOF
-
-  ok
-}
-
 finish() {
   echo ""
   sn_line
@@ -336,11 +394,14 @@ main() {
   clear
   banner
 
+  # Mostrar lista de dependencias antes de instalar
+  show_dependency_list
+
   install_dependencies
   install_project_into_etc
   apply_permissions
   create_root_only_wrappers
-  ensure_root_bashrc_banner
+  ensure_root_login_banner
   finish
 
   if [[ "${START_AFTER}" == "true" ]]; then
