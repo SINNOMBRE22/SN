@@ -233,11 +233,9 @@ show_services_status() {
   done
 
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo ""
 }
 
 show_system_status() {
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${W}ESTADO DEL SISTEMA${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[${N} ${W}Uptime:  ${Y}$(uptime -p | sed 's/up //')${N}"
