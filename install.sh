@@ -95,35 +95,83 @@ spinner_start() {
 }
 spinner_stop() {
   local pid="$1"
-  kill "$pid" >/dev/null 2>&1 || true
-  wait "$pid" 2>/dev/null || true
+  if [[ -n "${pid:-}" ]] && kill -0 "$pid" >/dev/null 2>&1; then
+    kill "$pid" >/dev/null 2>&1 || true
+    wait "$pid" 2>/dev/null || true
+  fi
   printf "\r"
 }
 # -------------------------------------
 
+# Espera por locks de apt/dpkg (evita quedarse "congelado")
+wait_for_apt() {
+  local waited=0
+  local max_wait=120  # segundos totales a esperar antes de continuar (configurable)
+  local sleep_step=2
+  local msg="Esperando bloqueo de apt/dpkg..."
+  while lsof /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock 2>/dev/null | grep -q . || fuser /var/lib/dpkg/lock-frontend 2>/dev/null | grep -q .; do
+    if (( waited >= max_wait )); then
+      echo ""
+      echo -e "${Y}Advertencia:${N} apt/dpkg sigue bloqueado después de ${max_wait}s. Intentando de todos modos."
+      return 1
+    fi
+    # spinner breve mientras esperamos
+    local sp
+    sp=$(spinner_start "$msg")
+    sleep "$sleep_step"
+    spinner_stop "$sp"
+    waited=$((waited + sleep_step))
+  done
+  return 0
+}
+
+# Ejecuta comando con spinner y timeout si está disponible
 run_quiet() {
   local cmd="$*"
-  # mensaje corto para el spinner (corta la longitud del comando)
   local msg="$(printf '%s' "$cmd" | cut -c1-28)"
-  # iniciar spinner
+  # si hay locks, esperar antes de ejecutar
+  wait_for_apt || true
+
+  local use_timeout=false
+  if command -v timeout >/dev/null 2>&1; then
+    use_timeout=true
+  fi
+
+  local full_cmd="$cmd"
+  if $use_timeout; then
+    # límite razonable por comando para evitar congelamientos (5m)
+    full_cmd="timeout 300s bash -lc '${cmd//\'/\'\\\'\'}'"
+  fi
+
   local spid
   spid=$(spinner_start "$msg")
-  if bash -lc "$cmd" &>/dev/null; then
+  if bash -lc "$full_cmd" &>/dev/null; then
     spinner_stop "$spid"
     return 0
   fi
   spinner_stop "$spid"
+
+  # intentar reparar y reintentar una vez
   apt_fix_if_needed
   spid=$(spinner_start "$msg")
-  bash -lc "$cmd" &>/dev/null
-  local rc=$?
+  if bash -lc "$full_cmd" &>/dev/null; then
+    spinner_stop "$spid"
+    return 0
+  fi
   spinner_stop "$spid"
-  return $rc
+  return 1
 }
 
 apt_update() {
   step "Actualizando repos (apt update)"
-  run_quiet "apt-get update -y" && ok || { fail; exit 1; }
+  # usar el comando correcto sin -y
+  if run_quiet "apt-get update"; then
+    ok
+  else
+    fail
+    echo -e "${R}Error al ejecutar apt-get update. Intenta ejecutar manualmente: ${C}apt-get update${N}"
+    exit 1
+  fi
 }
 
 apt_upgrade() {
