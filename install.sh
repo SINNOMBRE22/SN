@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -66,7 +65,7 @@ banner() {
 step() {
   local msg="$1"
   printf " ${C}•${N} %b" "${W}${msg}${N}"
-  local pad=$(( 55 - ${#msg} ))
+  local pad=$(( 35 - ${#msg} ))   # acorté el ancho de padding para líneas más cortas
   (( pad < 1 )) && pad=1
   printf "%*s" "$pad" "" | tr ' ' '.'
   printf " "
@@ -79,13 +78,47 @@ apt_fix_if_needed() {
   apt-get -f install -y &>/dev/null || true
 }
 
+# --- Spinner / animación "insta" ---
+spinner_loop() {
+  local msg="$1"
+  local frames=( '▁' '▂' '▃' '▄' '▅' '▆' '▇' '█' '▇' '▆' '▅' '▄' '▃' '▂' )
+  while true; do
+    for f in "${frames[@]}"; do
+      printf "\r ${C}%s${N} %s" "${msg}" "${f}"
+      sleep 0.07
+    done
+  done
+}
+spinner_start() {
+  local msg="$1"
+  spinner_loop "$msg" & echo $!
+}
+spinner_stop() {
+  local pid="$1"
+  kill "$pid" >/dev/null 2>&1 || true
+  wait "$pid" 2>/dev/null || true
+  printf "\r"
+}
+# -------------------------------------
+
 run_quiet() {
   local cmd="$*"
+  # mensaje corto para el spinner (corta la longitud del comando)
+  local msg="$(printf '%s' "$cmd" | cut -c1-28)"
+  # iniciar spinner
+  local spid
+  spid=$(spinner_start "$msg")
   if bash -lc "$cmd" &>/dev/null; then
+    spinner_stop "$spid"
     return 0
   fi
+  spinner_stop "$spid"
   apt_fix_if_needed
+  spid=$(spinner_start "$msg")
   bash -lc "$cmd" &>/dev/null
+  local rc=$?
+  spinner_stop "$spid"
+  return $rc
 }
 
 apt_update() {
@@ -142,6 +175,9 @@ install_dependencies() {
   install_pkg curl || true
   install_pkg git || true
 
+  # Instalar primero toilet (genera banner) para que quede disponible al finalizar
+  install_pkg toilet || true
+
   # Lista grande tipo Multi-Script (con compat)
   install_pkg sudo || true
   install_any_of "bsd utils" bsdextrautils bsdmainutils util-linux || true
@@ -169,8 +205,7 @@ install_dependencies() {
   install_any_of "netcat" netcat-openbsd netcat-traditional netcat || true
   install_pkg net-tools || true
 
-  # Banner deps (tu menu usa toilet)
-  install_pkg toilet || true
+  # Otras deps de banner/estética
   install_pkg figlet || true
   install_pkg cowsay || true
   install_any_of "lolcat" lolcat ruby-lolcat || true
@@ -280,6 +315,9 @@ ensure_root_bashrc_banner() {
 if [[ $- == *i* ]]; then
   [[ -n "${SN_WELCOME_SHOWN:-}" ]] && return
   export SN_WELCOME_SHOWN=1
+
+  # limpiar pantalla para que solo se vea el banner
+  clear
 
   R='\033[0;31m'
   G='\033[0;32m'
