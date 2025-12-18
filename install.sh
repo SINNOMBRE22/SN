@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # =========================================================
-# SinNombre - Installer Profesional (Modo Discreto)
+# SinNombre - Installer (simple, sin animaciones)
 # Muestra lista de dependencias antes de instalar
-# Configura inicio limpio con solo el banner visible
+# Asegura que al iniciar la VPS solo se vea el banner
 # =========================================================
 
 REPO_OWNER="SINNOMBRE22"
@@ -15,15 +15,13 @@ REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 INSTALL_DIR="/etc/SN"
 MENU_PATH="${INSTALL_DIR}/menu"
 
-# Colores (EXACTAMENTE como los tenías)
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'
 W='\033[1;37m'; N='\033[0m'; D='\033[2m'; BOLD='\033[1m'
 
-# Línea decorativa (EXACTAMENTE como la tenías)
 sn_line() { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
 
 # ----------------------------
-# Argumentos
+# Args
 # ----------------------------
 START_AFTER=false
 for arg in "$@"; do
@@ -32,9 +30,6 @@ for arg in "$@"; do
   esac
 done
 
-# ----------------------------
-# Funciones Principales
-# ----------------------------
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     clear
@@ -46,7 +41,6 @@ require_root() {
   fi
 }
 
-# Banner del instalador (IGUAL al tuyo)
 banner() {
   echo ""
   if command -v toilet >/dev/null 2>&1; then
@@ -69,9 +63,12 @@ step() {
 ok()   { echo -e "${G}[OK]${N}"; }
 fail() { echo -e "${R}[FAIL]${N}"; }
 
-# ----------------------------
-# Lista de Dependencias
-# ----------------------------
+apt_fix_if_needed() {
+  dpkg --configure -a || true
+  apt-get -f install -y || true
+}
+
+# ---------- Lista de dependencias a mostrar ----------
 show_dependency_list() {
   echo ""
   sn_line
@@ -117,27 +114,21 @@ show_dependency_list() {
   echo ""
 }
 
-# ----------------------------
-# Gestión de Paquetes (Discreta)
-# ----------------------------
-apt_fix_if_needed() {
-  dpkg --configure -a >/dev/null 2>&1 || true
-  apt-get -f install -y >/dev/null 2>&1 || true
-}
-
+# Ejecuta comando de forma discreta
 run_discreet() {
   local cmd="$1"
-  local log="/tmp/sn_install.log"
+  local log="/tmp/sn_install.$$.log"
   
-  # Solo muestra errores si ocurren
-  if bash -lc "${cmd}" >>"${log}" 2>&1; then
+  if bash -lc "${cmd}" >"${log}" 2>&1; then
+    rm -f "${log}" 2>/dev/null || true
     return 0
   else
-    # Reintento con reparación
     apt_fix_if_needed
     if bash -lc "${cmd}" >>"${log}" 2>&1; then
+      rm -f "${log}" 2>/dev/null || true
       return 0
     fi
+    rm -f "${log}" 2>/dev/null || true
     return 1
   fi
 }
@@ -148,7 +139,8 @@ apt_update() {
     ok
   else
     fail
-    return 1
+    echo -e "${R}Error en apt-get update${N}"
+    exit 1
   fi
 }
 
@@ -161,9 +153,9 @@ install_pkg() {
   local pkg="$1"
   step "Instalando ${pkg}"
   if run_discreet "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${pkg}"; then
-    ok
+    ok; return 0
   else
-    fail
+    fail; return 1
   fi
 }
 
@@ -171,27 +163,24 @@ install_any_of() {
   local label="$1"; shift
   local candidates=("$@")
   step "Instalando ${label}"
-  
   for p in "${candidates[@]}"; do
     if run_discreet "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${p}"; then
-      ok
-      return 0
+      ok; return 0
     fi
   done
-  fail
-  return 1
+  fail; return 1
 }
 
-# ----------------------------
-# Configuración de Banner Limpio (CON TEXTO EXACTO)
-# ----------------------------
+# -------------------------
+# Configurar banner limpio al inicio
+# -------------------------
 ensure_clean_banner() {
   step "Configurando banner de inicio limpio"
   
-  # Crear archivo para silenciar mensajes del sistema
-  touch /root/.hushlogin >/dev/null 2>&1
+  # Silenciar mensajes del sistema
+  touch /root/.hushlogin 2>/dev/null || true
   
-  # Configurar .bashrc para limpiar pantalla y mostrar banner EXACTO
+  # Configurar .bashrc para mostrar el banner EXACTO
   local bashrc="/root/.bashrc"
   local marker="# === SinNombre Banner === #"
   
@@ -205,13 +194,14 @@ if [[ $- == *i* ]] && [[ -z "${SN_WELCOME_SHOWN:-}" ]]; then
   # Limpiar pantalla completamente
   clear
   
-  # Mostrar banner EXACTO como en tu script original
+  # Mostrar el banner EXACTO como lo hace toilet
   echo ""
   if command -v toilet >/dev/null 2>&1; then
-    toilet -f slant -F metal "SinNombre" 2>/dev/null || true
+    toilet -f slant -F metal "SinNombre" 2>/dev/null
   else
     echo -e "\033[0;36m\033[1mSinNombre\033[0m"
   fi
+  echo ""
   echo -e "\033[1;37mCreador:\033[0m \033[0;36m@SIN_NOMBRE22\033[0m  \033[1;33m(en desarrollo)\033[0m"
   echo -e "\033[1;37mPara iniciar digite:\033[0m \033[0;32mmenu\033[0m \033[1;37mo\033[0m \033[0;32msn\033[0m"
   echo ""
@@ -236,11 +226,7 @@ EOF
   ok
 }
 
-# ----------------------------
-# Instalación de Dependencias (IGUAL a tu orden)
-# ----------------------------
 install_dependencies() {
-  echo ""
   sn_line
   echo -e "${Y}${BOLD}Preparando sistema...${N}"
   sn_line
@@ -254,50 +240,47 @@ install_dependencies() {
   echo -e "${Y}${BOLD}Instalando dependencias${N}"
   sn_line
 
-  install_pkg ca-certificates
-  install_pkg curl
-  install_pkg git
-  install_pkg toilet
-  install_pkg sudo
-  install_any_of "bsd utils" bsdextrautils bsdmainutils util-linux
-  install_pkg zip
-  install_pkg unzip
-  install_pkg ufw
-  install_any_of "python (compat)" python-is-python3 python3
-  install_pkg python3
-  install_pkg python3-pip
-  install_pkg openssl
-  install_pkg screen
-  install_any_of "cron" cron cronie
-  install_pkg iptables
-  install_pkg lsof
-  install_pkg nano
-  install_pkg at
-  install_pkg mlocate
-  install_pkg gawk
-  install_pkg grep
-  install_pkg bc
-  install_pkg jq
-  install_pkg nodejs
-  install_pkg npm
-  install_pkg socat
-  install_any_of "netcat" netcat-openbsd netcat-traditional netcat
-  install_pkg net-tools
-  install_pkg figlet
-  install_pkg cowsay
-  install_any_of "lolcat" lolcat ruby-lolcat
+  install_pkg ca-certificates || true
+  install_pkg curl || true
+  install_pkg git || true
+  install_pkg toilet || true
+  install_pkg sudo || true
+  install_any_of "bsd utils" bsdextrautils bsdmainutils util-linux || true
+  install_pkg zip || true
+  install_pkg unzip || true
+  install_pkg ufw || true
+  install_any_of "python (compat)" python-is-python3 python3 || true
+  install_pkg python3 || true
+  install_pkg python3-pip || true
+  install_pkg openssl || true
+  install_pkg screen || true
+  install_any_of "cron" cron cronie || true
+  install_pkg iptables || true
+  install_pkg lsof || true
+  install_pkg nano || true
+  install_pkg at || true
+  install_pkg mlocate || true
+  install_pkg gawk || true
+  install_pkg grep || true
+  install_pkg bc || true
+  install_pkg jq || true
+  install_pkg nodejs || true
+  install_pkg npm || true
+  install_pkg socat || true
+  install_any_of "netcat" netcat-openbsd netcat-traditional netcat || true
+  install_pkg net-tools || true
+  install_pkg figlet || true
+  install_pkg cowsay || true
+  install_any_of "lolcat" lolcat ruby-lolcat || true
 }
 
-# ----------------------------
-# Instalación del Proyecto (Discreta)
-# ----------------------------
 install_project() {
   echo ""
   sn_line
   echo -e "${Y}${BOLD}Instalando script${N}"
   sn_line
 
-  step "Creando carpeta de instalación"
+  step "Creando directorio de instalación"
   mkdir -p "${INSTALL_DIR}" && ok || { fail; exit 1; }
 
   if [[ -d "${INSTALL_DIR}/.git" ]]; then
@@ -308,8 +291,8 @@ install_project() {
     git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" "${INSTALL_DIR}" >/dev/null 2>&1 && ok || { fail; exit 1; }
   fi
 
-  step "Verificando archivos principales"
-  [[ -f "${MENU_PATH}" ]] && ok || { fail; exit 1; }
+  step "Verificando archivo principal"
+  [[ -f "${MENU_PATH}" ]] && ok || { fail; echo -e "${Y}No existe:${N} ${C}${MENU_PATH}${N}"; exit 1; }
 }
 
 apply_permissions() {
@@ -328,7 +311,7 @@ apply_permissions() {
   find "${INSTALL_DIR}" -type f -name "*.py" -exec chmod +x {} \; 2>/dev/null && ok || ok
 }
 
-setup_commands() {
+create_root_only_wrappers() {
   echo ""
   sn_line
   echo -e "${Y}${BOLD}Configurando accesos...${N}"
@@ -338,10 +321,10 @@ setup_commands() {
   cat >/usr/local/bin/sn <<EOF
 #!/usr/bin/env bash
 if [[ "\${EUID:-\$(id -u)}" -ne 0 ]]; then
-  echo -e "\033[0;31m══════════════════════════ / / / ══════════════════════════\033[0m"
-  echo -e "\033[0;31mAcceso denegado.\033[0m \033[1;33mEjecuta en root o con sudo.\033[0m"
-  echo -e "\033[1;37mUsa:\033[0m \033[0;36msudo sn\033[0m"
-  echo -e "\033[0;31m══════════════════════════ / / / ══════════════════════════\033[0m"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${R}Acceso denegado.${N} ${Y}Ejecuta en root o con sudo.${N}"
+  echo -e "${W}Usa:${N} ${C}sudo sn${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   exit 1
 fi
 exec "${MENU_PATH}" "\$@"
@@ -352,10 +335,10 @@ EOF
   cat >/usr/local/bin/menu <<EOF
 #!/usr/bin/env bash
 if [[ "\${EUID:-\$(id -u)}" -ne 0 ]]; then
-  echo -e "\033[0;31m══════════════════════════ / / / ══════════════════════════\033[0m"
-  echo -e "\033[0;31mAcceso denegado.\033[0m \033[1;33mEjecuta en root o con sudo.\033[0m"
-  echo -e "\033[1;37mUsa:\033[0m \033[0;36msudo menu\033[0m"
-  echo -e "\033[0;31m══════════════════════════ / / / ══════════════════════════\033[0m"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${R}Acceso denegado.${N} ${Y}Ejecuta en root o con sudo.${N}"
+  echo -e "${W}Usa:${N} ${C}sudo menu${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   exit 1
 fi
 exec "${MENU_PATH}" "\$@"
@@ -363,9 +346,6 @@ EOF
   chmod +x /usr/local/bin/menu && ok || fail
 }
 
-# ----------------------------
-# Finalización
-# ----------------------------
 finish() {
   echo ""
   sn_line
@@ -376,9 +356,6 @@ finish() {
   echo ""
 }
 
-# ----------------------------
-# Función Principal
-# ----------------------------
 main() {
   require_root
   command -v apt-get >/dev/null 2>&1 || { echo "Se requiere apt-get"; exit 1; }
@@ -386,13 +363,12 @@ main() {
   clear
   banner
 
-  # Mostrar lista de dependencias antes de instalar
   show_dependency_list
 
   install_dependencies
   install_project
   apply_permissions
-  setup_commands
+  create_root_only_wrappers
   ensure_clean_banner
   finish
 
@@ -401,5 +377,4 @@ main() {
   fi
 }
 
-# Ejecutar
 main "$@"
