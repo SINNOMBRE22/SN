@@ -85,12 +85,12 @@ show_banner() {
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[ ${G}●            SinNombre - VPS Manager v1.0 ●${R} ]${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${R}[${N} ${W}Sistema:     ${G}${DISTRO}${N}"
+  echo -e "${R}[${N} ${W}Sistema: ${G}${DISTRO}${N}"
   echo -e "${R}[${N} ${W}IP Publica: ${Y}${IP_PUBLICA}${N}"
-  echo -e "${R}[${N} ${W}Usuario:  ${G}${USUARIO}${N}"
+  echo -e "${R}[${N} ${W}Usuario: ${G}${USUARIO}${N}"
   echo -e "${R}[${N} ${W}Zona Horaria: ${Y}${ZONA_HORARIA}${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${R}[${N} ${W}Memoria: ${Y}${MEM_TOTAL} MB${W} > Uso: ${Y}${MEM_USADA} MB${W} > Libre: ${G}${MEM_LIBRE} MB${R} ]${N}"
+  echo -e "${R}[${N} ${W}Memoria Ram: ${Y}${MEM_TOTAL} MB${W} > Uso: ${Y}${MEM_USADA} MB${W} > Libre: ${G}${MEM_LIBRE} MB${R} ]${N}"
 }
 
 get_systemd_unit_by_pid() {
