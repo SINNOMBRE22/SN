@@ -7,9 +7,6 @@ set -euo pipefail
 # Archivo principal (sin extensión): SN/menu
 # =========================================================
 
-# ============================================
-# CONFIGURACIÓN DE COLORES (LOCAL EN ESTE MENU)
-# ============================================
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -19,17 +16,15 @@ C='\033[0;36m'
 W='\033[1;37m'
 N='\033[0m'
 
-# ============================================
-# RUTAS (funciona local y ya instalado)
-# ============================================
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 run_module() {
   local rel="$1"
   local path="${ROOT_DIR}/${rel}"
-
   if [[ -f "$path" ]]; then
     bash "$path"
+    # Cuando el módulo termina, limpia la pantalla y retorna
+    clear_screen
   else
     echo ""
     echo -e "${Y}Módulo no disponible:${N} ${C}${rel}${N}"
@@ -38,9 +33,6 @@ run_module() {
   fi
 }
 
-# ============================================
-# UTILIDAD
-# ============================================
 clear_screen() { clear; }
 
 pause() {
@@ -67,7 +59,6 @@ show_custom_banner() {
 
 get_system_info() {
   if [[ -f /etc/os-release ]]; then
-    # shellcheck disable=SC1091
     . /etc/os-release
     DISTRO="${PRETTY_NAME:-$(uname -rs)}"
   else
@@ -80,16 +71,12 @@ get_system_info() {
     || echo "No disponible"
   )"
 
- USUARIO="$(whoami)"
-ZONA_HORARIA="$(timedatectl 2>/dev/null | awk -F': ' '/Time zone/ {print $2}' | awk '{print $1}' || date +%Z)"
+  USUARIO="$(whoami)"
+  ZONA_HORARIA="$(timedatectl 2>/dev/null | awk -F': ' '/Time zone/ {print $2}' | awk '{print $1}' || date +%Z)"
 
-# Memoria real, usada y disponible
-read MEM_TOTAL MEM_USADA MEM_LIBRE <<< $(free -m | awk '/^Mem:/ {print $2, $3, $7}')
+  read MEM_TOTAL MEM_USADA MEM_LIBRE <<< $(free -m | awk '/^Mem:/ {print $2, $3, $7}')
 }
 
-# ============================================
-# VISUAL: BANNER + INFO
-# ============================================
 show_banner() {
   clear_screen
   get_system_info
@@ -103,15 +90,8 @@ show_banner() {
   echo -e "${R}[${N} ${W}Usuario:  ${G}${USUARIO}${N}"
   echo -e "${R}[${N} ${W}Zona Horaria: ${Y}${ZONA_HORARIA}${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
- echo -e "${R}[${N} ${W}Memoria: ${Y}${MEM_TOTAL} MB${W} > Uso: ${Y}${MEM_USADA} MB${W} > Libre: ${G}${MEM_LIBRE} MB${R} ]${N}"
+  echo -e "${R}[${N} ${W}Memoria: ${Y}${MEM_TOTAL} MB${W} > Uso: ${Y}${MEM_USADA} MB${W} > Libre: ${G}${MEM_LIBRE} MB${R} ]${N}"
 }
-
-# ============================================
-# SERVICIOS ACTIVOS (MEJORADO: systemd + fallback)
-# ============================================
-# ============================================
-# SERVICIOS ACTIVOS (FIX match exacto de puerto)
-# ============================================
 
 get_systemd_unit_by_pid() {
   local pid="$1"
@@ -119,24 +99,17 @@ get_systemd_unit_by_pid() {
   systemctl show -p Unit --value "$pid" 2>/dev/null || echo ""
 }
 
-# Devuelve "proc|pid" usando match exacto del puerto (evita 80 vs 8022/8080)
 get_proc_pid_by_port() {
   local port="$1"
   local line proc pid
-
-  # match exacto al final: :80$
-  # ss: Local Address:Port está en $5
   line="$(
     ss -H -lntup 2>/dev/null \
     | awk -v re=":${port}\$" '$5 ~ re {print; exit}' \
     || true
   )"
-
   [[ -n "${line:-}" ]] || { echo "Desconocido|"; return 0; }
-
   proc="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' || true)"
   pid="$(echo "$line"  | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' || true)"
-
   [[ -n "${proc:-}" ]] || proc="Desconocido"
   echo "${proc}|${pid}"
 }
@@ -144,7 +117,6 @@ get_proc_pid_by_port() {
 get_service_type() {
   local proc="$1"
   local unit="$2"
-
   if [[ -n "${unit:-}" ]]; then
     case "$unit" in
       ssh.service|sshd.service) echo "SSH" ;;
@@ -194,17 +166,13 @@ show_services_status() {
   while read -r port; do
     [[ -n "${port:-}" ]] || continue
     [[ "${port}" =~ ^[0-9]+$ ]] || continue
-
     local pp proc pid unit service
     pp="$(get_proc_pid_by_port "$port")"
     proc="${pp%%|*}"
     pid="${pp#*|}"
-
     unit=""
     [[ -n "${pid:-}" ]] && unit="$(get_systemd_unit_by_pid "$pid")"
-
     service="$(get_service_type "$proc" "$unit")"
-
     ports_array+=("$port")
     services_array+=("$service")
   done <<< "$listening_ports"
@@ -218,71 +186,67 @@ show_services_status() {
   fi
 
   local half=$(( (count + 1) / 2 ))
-
   for ((i = 0; i < half; i++)); do
     if [[ $i -lt $count ]]; then
       printf "${C}%-12s${W}: ${G}%-7s${N}" "${services_array[$i]}" "${ports_array[$i]}"
     fi
-
     printf "  "
-
     if [[ $((i + half)) -lt $count ]]; then
       printf "${C}%-12s${W}: ${G}%-7s${N}" "${services_array[$((i + half))]}" "${ports_array[$((i + half))]}"
     fi
     echo ""
   done
-
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
 
 show_system_status() {
-  echo -e "${W}ESTADO DEL SISTEMA${N}"
+  echo -e "${W}                    ESTADO DEL SISTEMA${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[${N} ${W}Uptime:  ${Y}$(uptime -p | sed 's/up //')${N}"
   echo -e "${R}[${N} ${W}Espacio disco: ${Y}$(df -h / | awk 'NR==2{print $4}') libre${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
 
-# ============================================
-# MENÚ PRINCIPAL
-# ============================================
 main_menu() {
-  show_banner
-  show_services_status
-  show_system_status
+  while true; do
+    show_banner
+    show_services_status
+    show_system_status
 
-  echo -e "${W}                     MENÚ PRINCIPAL${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${R}[${Y}1${R}]${N}  ${C}USUARIOS SSH${N}             ${R}[${Y}5${R}]${N}  ${C}BANNER SSH${N}"
-  echo -e "${R}[${Y}2${R}]${N}  ${C}USUARIOS V2RAY/XRAY${N}      ${R}[${Y}6${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
-  echo -e "${R}[${Y}3${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}7${R}]${N}  ${C}SPEEDTEST${N}"
-  echo -e "${R}[${Y}4${R}]${N}  ${C}HERRAMIENTAS${N}             ${R}[${Y}99${R}]${N} ${C}REBOOT VPS${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}       ${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo ""
+    echo -e "${W}                     MENÚ PRINCIPAL${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    echo -e "${R}[${Y}1${R}]${N}  ${C}USUARIOS SSH${N}             ${R}[${Y}5${R}]${N}  ${C}BANNER SSH${N}"
+    echo -e "${R}[${Y}2${R}]${N}  ${C}USUARIOS V2RAY/XRAY${N}      ${R}[${Y}6${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
+    echo -e "${R}[${Y}3${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}7${R}]${N}  ${C}SPEEDTEST${N}"
+    echo -e "${R}[${Y}4${R}]${N}  ${C}HERRAMIENTAS${N}             ${R}[${Y}99${R}]${N} ${C}REBOOT VPS${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    echo -e "${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}       ${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    echo ""
+    echo -ne "${W}Selecciona una opción: ${G}"
+    read -r option
 
-  echo -ne "${W}Selecciona una opción: ${G}"
-  read -r option
-
-  case "${option:-}" in
-    1) run_module "Usuarios/ssh.sh" ;;
-    2) run_module "Usuarios/v2ray-xray.sh" ;;
-    3) run_module "Protocolos/menu.sh" ;;
-    4) run_module "Herramientas/menu.sh" ;;
-    5) banner_ssh_menu ;;
-    6) run_module "Sistema/puertos.sh" ;;
-    7) run_module "Herramientas/speedtest.sh" ;;
-    99) reboot_vps ;;
-    100) desinstalar_menu ;;
-    0) exit_script ;;
-    *) invalid_option ;;
-  esac
+    case "${option:-}" in
+      1) run_module "Usuarios/ssh.sh" ;;
+      2) run_module "Usuarios/v2ray-xray.sh" ;;
+      3) run_module "Protocolos/menu.sh" ;;
+      4) run_module "Herramientas/menu.sh" ;;
+      5) banner_ssh_menu ;;
+      6) run_module "Sistema/puertos.sh" ;;
+      7) run_module "Herramientas/speedtest.sh" ;;
+      99) reboot_vps ;;
+      100) desinstalar_menu ;;
+      0)
+        exit_script
+        return 0 # Por si hay un error, salimos del ciclo
+        ;;
+      *)
+        invalid_option
+        ;;
+    esac
+  done
 }
 
-# ============================================
-# OPCIONES (placeholder por ahora)
-# ============================================
 banner_ssh_menu() {
   clear_screen
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
@@ -290,7 +254,6 @@ banner_ssh_menu() {
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${Y}En desarrollo...${N}"
   pause
-  main_menu
 }
 
 reboot_vps() {
@@ -298,16 +261,13 @@ reboot_vps() {
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${Y}                    REINICIAR VPS${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-
   echo -ne "${Y}¿Estás seguro que deseas reiniciar el VPS? (s/n): ${N}"
   read -r confirm
-
   if [[ "${confirm:-}" == "s" || "${confirm:-}" == "S" ]]; then
     echo -e "${Y}El VPS se reiniciará en 10 segundos...${N}"
     sleep 10
     reboot
-  else
-    main_menu
+    exit 0
   fi
 }
 
@@ -316,16 +276,11 @@ desinstalar_menu() {
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}                DESINSTALAR SCRIPT${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-
   echo -ne "${Y}¿Estás seguro que deseas desinstalar el Script? (s/n): ${N}"
   read -r confirm
-
   if [[ "${confirm:-}" == "s" || "${confirm:-}" == "S" ]]; then
     echo -e "${R}Desinstalación: ${Y}En desarrollo...${N}"
     pause
-    main_menu
-  else
-    main_menu
   fi
 }
 
@@ -335,7 +290,6 @@ invalid_option() {
   echo -e "${B}                   OPCIÓN INVÁLIDA${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   sleep 2
-  main_menu
 }
 
 exit_script() {
@@ -347,8 +301,7 @@ exit_script() {
   exit 0
 }
 
-# ============================================
-# INICIO
-# ============================================
+trap exit_script SIGINT SIGTERM
+
 require_root
 main_menu

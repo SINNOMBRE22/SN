@@ -259,7 +259,7 @@ main_menu_single() {
       15) run_proto "Protocolos/checkuser.sh" ;;
       16) run_proto "Protocolos/atken.sh" ;;
       17) run_proto "Protocolos/sshgo.sh" ;;
-      0)  back_to_main ;;
+      0)  break ;;
       *)  echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac
   done
