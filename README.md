@@ -1,5 +1,4 @@
 <h1 align="center">
-  <img src="https://raw.githubusercontent.com/SINNOMBRE22/SN/main/install.sh" width="0" height="0"/>
   <img src="https://img.shields.io/badge/Shell-88.7%25-green?logo=gnu-bash&logoColor=white" />
   <img src="https://img.shields.io/badge/Python-11.3%25-blue?logo=python&logoColor=white" />
   <img src="https://img.shields.io/github/license/SINNOMBRE22/SN?color=blueviolet" />
@@ -26,10 +25,9 @@
 </p>
 
 El panel principal te permite:
-- Administrar <span style="color:#41e614;"><b>usuarios SSH</b></span> y <span style="color:#0891b2;"><b>V2Ray/XRay</b></span>
-- Instalar servicios y herramientas <span style="color:#eab308;">(speedtest, banner SSH, gestión de puertos)</span>
-- Visualizar el uso de RAM, uptime, espacio disponible y puertos de servicios activos, todo a color
-
+- Administrar **usuarios SSH** y **V2Ray/XRay**
+- Instalar servicios y herramientas *(speedtest, banner SSH, gestión de puertos)*
+- Visualizar el uso de RAM, uptime, espacio disponible y puertos de servicios activos, todo a color  
 </details>
 
 ---
@@ -37,7 +35,7 @@ El panel principal te permite:
 ## 🖥️ Captura de Pantalla
 
 <p align="center">
-  <img src="![image1](image1)" alt="Menu principal" width="350">
+  <img src="https://raw.githubusercontent.com/SINNOMBRE22/SN/main/IMG-20251219-WA0020.jpg" alt="Menu principal" width="350">
 </p>
 
 ---
@@ -46,7 +44,7 @@ El panel principal te permite:
 
 ```
 ├── install.sh           # Script principal de instalación y actualización
-├── menu                # Script Bash, interface principal
+├── menu                # Script Bash, interfaz principal
 ├── pythonproxy.py      # Herramienta en Python
 ├── Herramientas/       
 ├── Protocolos/       
