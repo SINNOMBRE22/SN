@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/Python-11.3%25-blue?logo=python&logoColor=white" />
   <img src="https://img.shields.io/github/license/SINNOMBRE22/SN?color=blueviolet" />
   <br>
-  <img width="300" src="https://github.com/SINNOMBRE22/SN/raw/main/path/to/your/screenshot.png" alt="SinNombre VPS Manager">
+  <img width="300" src="https://raw.githubusercontent.com/SINNOMBRE22/SN/main/IMG-20251219-WA0020.jpg" alt="SinNombre VPS Manager">
   <br>
   <b>SinNombre - VPS Manager</b>
 </h1>
