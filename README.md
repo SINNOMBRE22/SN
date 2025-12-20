@@ -3,7 +3,7 @@
   <img src="https://img.shields.io/badge/Python-11.3%25-blue?logo=python&logoColor=white" />
   <img src="https://img.shields.io/github/license/SINNOMBRE22/SN?color=blueviolet" />
   <br>
-  <img width="300" src="https://raw.githubusercontent.com/SINNOMBRE22/SN/main/IMG-20251219-WA0020.jpg" alt="SinNombre VPS Manager">
+  <img width="300" src="https://github.com/SINNOMBRE22/SN/raw/main/IMG-20251219-WA0021.jpg" alt="SinNombre VPS Manager">
   <br>
   <b>SinNombre - VPS Manager</b>
 </h1>
@@ -29,14 +29,6 @@ El panel principal te permite:
 - Instalar servicios y herramientas *(speedtest, banner SSH, gestión de puertos)*
 - Visualizar el uso de RAM, uptime, espacio disponible y puertos de servicios activos, todo a color  
 </details>
-
----
-
-## 🖥️ Captura de Pantalla
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/SINNOMBRE22/SN/main/IMG-20251219-WA0020.jpg" alt="Menu principal" width="350">
-</p>
 
 ---
 
