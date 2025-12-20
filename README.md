@@ -22,7 +22,7 @@
 <summary><b>Ver menú y funciones (click para expandir)</b></summary>
 
 <p align="center">
-<img src="![image1](image1)" alt="SinNombre VPS Manager Menu" width="320"/>
+<img src="https://raw.githubusercontent.com/SINNOMBRE22/SN/main/IMG-20251219-WA0020.jpg" alt="SinNombre VPS Manager Menu" width="320"/>
 </p>
 
 El panel principal te permite:
