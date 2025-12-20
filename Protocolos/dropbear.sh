@@ -186,7 +186,7 @@ main_menu() {
       3) toggle_service ;;
       4) restart_service; echo -e "${G}Dropbear reiniciado.${N}"; pause ;;
       5) uninstall_dropbear ;;
-      0) bash "${ROOT_DIR}/Protocolos/menu.sh" ;;
+      0)  break ;;
       *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac
   done

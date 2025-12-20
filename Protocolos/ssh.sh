@@ -177,7 +177,7 @@ main_menu() {
       4) toggle_ssh_service ;;
       5) restart_ssh; echo -e "${G}Servicio SSH reiniciado.${N}"; pause ;;
       6) uninstall_openssh ;;
-      0) bash "${ROOT_DIR}/Protocolos/menu.sh" ;;
+      0)  break ;; 
       *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac
   done

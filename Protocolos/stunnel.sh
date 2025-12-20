@@ -567,7 +567,7 @@ main_menu(){
       6) start_stop ;;
       7) restart_srv ;;
       8) ask_apply_ssl_fix; pause ;;
-      0) bash "${ROOT_DIR}/Protocolos/menu.sh" ;;
+      0)  break ;;
       *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac
   done

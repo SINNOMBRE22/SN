@@ -259,7 +259,10 @@ main_menu_single() {
       15) run_proto "Protocolos/checkuser.sh" ;;
       16) run_proto "Protocolos/atken.sh" ;;
       17) run_proto "Protocolos/sshgo.sh" ;;
-      0)  break ;;
+#            0)  return 0 ;;  # Si es una función, return vuelve al llamador
+      # O también:
+      0)  break ;;     # Rompe el bucle 'while' y permite que el script siga
+
       *)  echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac
   done

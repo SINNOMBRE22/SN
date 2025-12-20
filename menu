@@ -15,7 +15,14 @@ M='\033[0;35m'
 C='\033[0;36m'
 W='\033[1;37m'
 N='\033[0m'
-
+#=====≠===============================================
+#Colores del banner
+ROJO="\e[31m"
+BLANCO="\e[97m"
+CYAN="\e[36m"
+AMARILLO="\e[33m"
+RESET="\e[0m"
+#=====================================================
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 run_module() {
@@ -53,7 +60,7 @@ require_root() {
 
 show_custom_banner() {
   if command -v toilet &>/dev/null; then
-    toilet -f slant -F metal "SinNombre"
+    echo -e "\e[31m$(toilet -f slant -F metal "SinNombre")\e[0m"
   fi
 }
 
@@ -236,8 +243,7 @@ main_menu() {
       7) run_module "Herramientas/speedtest.sh" ;;
       99) reboot_vps ;;
       100) desinstalar_menu ;;
-      0)
-        exit_script
+      0) exit_script
         return 0 # Por si hay un error, salimos del ciclo
         ;;
       *)
