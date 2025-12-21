@@ -242,7 +242,7 @@ main_menu() {
       6) run_module "Sistema/puertos.sh" ;;
       7) run_module "Herramientas/speedtest.sh" ;;
       99) reboot_vps ;;
-      100) desinstalar_menu ;;
+      100) desinstalador_script ;;
       0) exit_script
         return 0 # Por si hay un error, salimos del ciclo
         ;;
@@ -277,17 +277,65 @@ reboot_vps() {
   fi
 }
 
-desinstalar_menu() {
+desinstalador_script() {
   clear_screen
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${R}                DESINSTALAR SCRIPT${N}"
+  echo -e "${W}                  DESINSTALAR COMPLETAMENTE${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -ne "${Y}¿Estás seguro que deseas desinstalar el Script? (s/n): ${N}"
+
+  echo -e "${Y}¡ATENCIÓN! Esto eliminará:${N}"
+  echo -e "${W}- Archivos y carpetas del Script (menu, sn, Herramientas/, Usuarios/, Protocolos/, Sistema/ ...)"
+  echo -e "- Servicios systemd instalados por SinNombre (v2ray, xray, stunnel4, squid, etc.)"
+  echo -e "- Configuración propia del panel"
+  echo -e "${R}Esta acción es irreversible.${N}\n"
+
+  echo -ne "${Y}¿Estás seguro de continuar? (s/n): ${N}"
   read -r confirm
-  if [[ "${confirm:-}" == "s" || "${confirm:-}" == "S" ]]; then
-    echo -e "${R}Desinstalación: ${Y}En desarrollo...${N}"
-    pause
-  fi
+  [[ "${confirm:-}" =~ ^[sS]$ ]] || { echo -e "${Y}Cancelado.${N}"; pause; return; }
+
+  # Detener y eliminar servicios conocidos
+  for svc in v2ray xray trojan dropbear stunnel4 squid squid3; do
+    if systemctl list-unit-files | grep -q "^$svc.service"; then
+      systemctl stop "$svc" 2>/dev/null
+      systemctl disable "$svc" 2>/dev/null
+      rm -f "/etc/systemd/system/$svc.service" "/lib/systemd/system/$svc.service" 2>/dev/null
+    fi
+    pkill -f "$svc" 2>/dev/null || true
+  done
+
+  systemctl daemon-reload
+
+  # Borrar archivos y directorios instalados por el panel
+  script_files=(
+    "$ROOT_DIR/menu"
+    "$ROOT_DIR/sn"
+  )
+  script_dirs=(
+    "$ROOT_DIR/Herramientas"
+    "$ROOT_DIR/Usuarios"
+    "$ROOT_DIR/Protocolos"
+    "$ROOT_DIR/Sistema"
+  )
+  for f in "${script_files[@]}"; do
+    [ -e "$f" ] && rm -f "$f"
+  done
+
+  for d in "${script_dirs[@]}"; do
+    [ -d "$d" ] && rm -rf "$d"
+  done
+
+  # Eliminar symlinks en /usr/local/bin
+  for bin in sn menu; do
+    [ -L "/usr/local/bin/$bin" ] && rm -f "/usr/local/bin/$bin"
+    [ -f "/usr/local/bin/$bin" ] && rm -f "/usr/local/bin/$bin"
+  done
+
+  echo -e "${G}Desinstalación completa.${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${Y}El Script y los servicios añadidos han sido eliminados.${N}"
+  echo -e "${W}Puedes cerrar la terminal o reiniciar el VPS.${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  exit 0
 }
 
 invalid_option() {
