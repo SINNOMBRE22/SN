@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =========================================================
-# SinNombre v1.0 - ADMINISTRADOR DROPBEAR (Diseño original)
+# SinNombre v1.1 - ADMINISTRADOR DROPBEAR (Actualizado 2024)
 # Archivo: SN/Protocolos/dropbear.sh
 # =========================================================
 
@@ -16,6 +16,9 @@ W='\033[1;37m'
 N='\033[0m'
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+BANNER_PATH="/etc/dropbear/banner.txt"
+DROPBEAR_CONF="/etc/default/dropbear"
 
 pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
 
@@ -43,10 +46,18 @@ badge() {
 }
 
 get_ports() {
-  # Puertos escuchando por dropbear
   local ports
   ports="$(ss -H -lntp 2>/dev/null | awk '$0 ~ /dropbear/ {print $4}' | awk -F: '{print $NF}' | sort -n | uniq | tr '\n' ' ' | sed 's/[[:space:]]\+$//' || true)"
   [[ -n "${ports:-}" ]] && echo "$ports" || echo "No detectado"
+}
+
+setup_banner() {
+  if [[ ! -f "$BANNER_PATH" ]]; then
+    echo "Bienvenido a SinNombre SSH!" > "$BANNER_PATH"
+    echo "Servidor personalizado basado en Dropbear." >> "$BANNER_PATH"
+    echo "Version: SSH-2.0-dropbear-mod-SinNombre" >> "$BANNER_PATH"
+  fi
+  chmod 644 "$BANNER_PATH"
 }
 
 install_dropbear() {
@@ -64,7 +75,32 @@ install_dropbear() {
   apt-get update -y >/dev/null 2>&1 || true
   apt-get install -y dropbear >/dev/null 2>&1 || true
 
-  echo -e "${G}Dropbear instalado.${N}"
+  setup_banner
+
+  # CONFIGURACION DROPBEAR (keepalive/banner/timeouts)
+  if [[ -f "$DROPBEAR_CONF" ]]; then
+    cp -a "$DROPBEAR_CONF" "$DROPBEAR_CONF.bak.$(date +%F_%H%M%S)"
+  else
+    touch "$DROPBEAR_CONF"
+    chmod 644 "$DROPBEAR_CONF"
+  fi
+
+  # Habilita Dropbear y banner, keepalive cada 60s y timeout de 600s
+  sed -i '/^NO_START=/d' "$DROPBEAR_CONF"
+  sed -i '/^DROPBEAR_EXTRA_ARGS=/d' "$DROPBEAR_CONF"
+  sed -i '/^DROPBEAR_BANNER=/d' "$DROPBEAR_CONF"
+  sed -i '/^DROPBEAR_PORT=/d' "$DROPBEAR_CONF"
+
+  echo "NO_START=0" >> "$DROPBEAR_CONF"
+  echo "DROPBEAR_PORT=22" >> "$DROPBEAR_CONF"
+  echo "DROPBEAR_EXTRA_ARGS=\"-K 60 -I 600 -b $BANNER_PATH\"" >> "$DROPBEAR_CONF"
+  echo "DROPBEAR_BANNER=\"$BANNER_PATH\"" >> "$DROPBEAR_CONF"
+
+  systemctl enable dropbear >/dev/null 2>&1 || true
+  systemctl restart dropbear >/dev/null 2>&1 || true
+
+  echo -e "${G}Dropbear instalado y configurado.${N}"
+  echo -e "${Y}Banner y ajustes de conexión aplicados.${N}"
   pause
 }
 
@@ -80,32 +116,43 @@ set_port() {
   [[ "${newp:-}" =~ ^[0-9]+$ ]] || { echo -e "${R}Puerto inválido.${N}"; pause; return; }
   (( newp >= 1 && newp <= 65535 )) || { echo -e "${R}Puerto fuera de rango.${N}"; pause; return; }
 
-  if [[ ! -f /etc/default/dropbear ]]; then
-    echo -e "${R}No existe /etc/default/dropbear. ¿Está instalado Dropbear?${N}"
+  if [[ ! -f "$DROPBEAR_CONF" ]]; then
+    echo -e "${R}No existe $DROPBEAR_CONF. ¿Está instalado Dropbear?${N}"
     pause
     return
   fi
 
-  cp -a /etc/default/dropbear "/etc/default/dropbear.bak.$(date +%F_%H%M%S)"
+  cp -a "$DROPBEAR_CONF" "$DROPBEAR_CONF.bak.$(date +%F_%H%M%S)"
 
-  # Asegura habilitado
-  if grep -qE '^NO_START=' /etc/default/dropbear; then
-    sed -i 's/^NO_START=.*/NO_START=0/' /etc/default/dropbear
-  else
-    echo "NO_START=0" >> /etc/default/dropbear
-  fi
-
-  # Ajusta puerto
-  if grep -qE '^DROPBEAR_PORT=' /etc/default/dropbear; then
-    sed -i "s/^DROPBEAR_PORT=.*/DROPBEAR_PORT=${newp}/" /etc/default/dropbear
-  else
-    echo "DROPBEAR_PORT=${newp}" >> /etc/default/dropbear
-  fi
+  sed -i '/^DROPBEAR_PORT=/d' "$DROPBEAR_CONF"
+  echo "DROPBEAR_PORT=${newp}" >> "$DROPBEAR_CONF"
 
   systemctl enable dropbear >/dev/null 2>&1 || true
   systemctl restart dropbear >/dev/null 2>&1 || true
 
   echo -e "${G}Puerto Dropbear configurado a ${newp} y servicio reiniciado.${N}"
+  pause
+}
+
+set_banner() {
+  clear
+  hr
+  echo -e "${W}          CONFIGURAR MENSAJE DE BIENVENIDA (BANNER)${N}"
+  hr
+  echo ""
+
+  echo -e "${Y}Puedes editar el mensaje que verán los usuarios al conectar por SSH.${N}"
+  echo -e "El banner actualmente es:\n"
+  cat "$BANNER_PATH" 2>/dev/null || echo "(No existe aún)"
+  echo ""
+
+  read -r -p "¿Deseas editar el banner (s/n)? " edit
+  [[ "${edit,,}" == "s" ]] || { echo "Cancelado."; pause; return; }
+
+  nano "$BANNER_PATH"
+
+  systemctl restart dropbear >/dev/null 2>&1 || true
+  echo -e "${G}Banner actualizado.${N}"
   pause
 }
 
@@ -173,6 +220,7 @@ main_menu() {
     echo -e "${R}[${Y}3${R}]${N} ${C}INICIAR/DETENER DROPBEAR${N} ${st}"
     echo -e "${R}[${Y}4${R}]${N} ${C}REINICIAR DROPBEAR${N}"
     echo -e "${R}[${Y}5${R}]${N} ${C}DESINSTALAR DROPBEAR${N}"
+    echo -e "${R}[${Y}6${R}]${N} ${C}CAMBIAR MENSAJE DE BIENVENIDA (BANNER)${N}"
     echo -e "${R}[${Y}0${R}]${N} ${W}VOLVER${N}"
 
     hr
@@ -186,6 +234,7 @@ main_menu() {
       3) toggle_service ;;
       4) restart_service; echo -e "${G}Dropbear reiniciado.${N}"; pause ;;
       5) uninstall_dropbear ;;
+      6) set_banner ;;
       0)  break ;;
       *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac
