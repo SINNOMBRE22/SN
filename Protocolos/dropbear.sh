@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+# set -euo pipefail  # REMOVIDO - Causa cierres inesperados
 
 # =========================================================
 # SinNombre v1.5 - ADMINISTRADOR DROPBEAR (Actualizado 2024)
@@ -16,17 +16,22 @@ W='\033[1;37m'
 N='\033[0m'
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
 DROPBEAR_CONF="/etc/default/dropbear"
 DROPBEAR_BIN="/usr/sbin/dropbear"
 
-pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
+# Función pause mejorada
+pause() { 
+    echo ""
+    echo -ne "${W}Presiona Enter para continuar...${N}"
+    read -r -t 30 || true
+    echo ""
+}
 
 require_root() {
-  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-    echo -e "${R}✗ Ejecuta como root.${N}"
-    exit 1
-  fi
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        echo -e "${R}✗ Ejecuta como root.${N}"
+        exit 1
+    fi
 }
 
 hr() { echo -e "${R}═════════════════════════════════════════════════════════════${N}"; }
@@ -38,17 +43,13 @@ show_header() {
     hr
 }
 
-is_installed() { 
+is_installed() {
     command -v dropbear >/dev/null 2>&1 || [[ -f "$DROPBEAR_BIN" ]]
-}
-
-is_on() {
-    systemctl is-active --quiet dropbear 2>/dev/null || pgrep -x dropbear >/dev/null 2>&1
 }
 
 get_ports() {
     local ports=""
-    ports=$(ss -H -lntp 2>/dev/null | awk '/dropbear/ {print $4}' | awk -F: '{print $NF}' | sort -nu | tr '\n' ',' | sed 's/,$//')
+    ports=$(ss -H -lntp 2>/dev/null | awk '/dropbear/ {print $4}' | awk -F: '{print $NF}' | sort -nu | tr '\n' ',' | sed 's/,$//') || true
     if [[ -z "$ports" ]] && [[ -f "$DROPBEAR_CONF" ]]; then
         ports=$(grep -oP 'DROPBEAR_PORT=\K[0-9]+' "$DROPBEAR_CONF" 2>/dev/null || echo "22")
     fi
@@ -57,7 +58,7 @@ get_ports() {
 
 show_log() {
     echo -e "${Y}LOG DE DROPBEAR:${N}"
-    journalctl -u dropbear --no-pager | tail -n 15 || echo -e "${Y}[SN] SSH-2.0-Mod-SinNombre-dropbear_2020.81${N}"
+    journalctl -u dropbear --no-pager 2>/dev/null | tail -n 15 || echo -e "${Y}[SN] SSH-2.0-Mod-SinNombre-dropbear_2020.81${N}"
     pause
 }
 
@@ -69,7 +70,7 @@ install_dropbear_custom() {
     if is_installed; then
         echo -e "${Y}Dropbear ya está instalado.${N}"
         pause
-        return
+        return 0
     fi
 
     local port=""
@@ -80,14 +81,14 @@ install_dropbear_custom() {
     done
 
     echo -e "${Y}Instalando Dropbear...${N}"
-    apt-get update -y >/dev/null 2>&1
+    apt-get update -y >/dev/null 2>&1 || true
     apt-get install -y dropbear >/dev/null 2>&1 || {
         echo -e "${R}✗ Error al instalar dropbear${N}"
         pause
-        return
+        return 1
     }
 
-    mkdir -p /etc/dropbear 2>/dev/null
+    mkdir -p /etc/dropbear 2>/dev/null || true
 
     cat > "$DROPBEAR_CONF" << EOF
 # Configuración Dropbear - SinNombre SSH
@@ -99,16 +100,24 @@ EOF
 
     if [[ ! -f /etc/dropbear/dropbear_rsa_host_key ]]; then
         echo -e "${Y}Generando claves RSA...${N}"
-        dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key -s 2048 >/dev/null 2>&1
+        dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key -s 2048 >/dev/null 2>&1 || {
+            echo -e "${Y}Generando claves alternativas...${N}"
+            ssh-keygen -t rsa -f /etc/dropbear/dropbear_rsa_host_key -N '' >/dev/null 2>&1 || true
+        }
     fi
 
-    systemctl enable dropbear >/dev/null 2>&1
-    systemctl restart dropbear >/dev/null 2>&1
+    systemctl enable dropbear >/dev/null 2>&1 || true
+    systemctl restart dropbear >/dev/null 2>&1 || {
+        echo -e "${Y}Iniciando dropbear manualmente...${N}"
+        pkill dropbear 2>/dev/null || true
+        dropbear -p $port -R -E >/dev/null 2>&1 &
+    }
 
     sleep 2
     echo -e "${G}✓ Dropbear instalado y configurado en puerto $port.${N}"
     echo -e "${Y}SSH-2.0-Mod-SinNombre-dropbear_2020.81 activo (LOG/MENSAJE).${N}"
     pause
+    return 0
 }
 
 set_port_custom() {
@@ -123,25 +132,40 @@ set_port_custom() {
         [[ "$new_port" =~ ^[0-9]+$ ]] && ((new_port>=1 && new_port<=65535)) || new_port=""
         [[ -z "$new_port" ]] && echo -e "${R}Puerto inválido.${N}"
     done
-    if [[ -f "$DROPBEAR_CONF" ]]; then
-        sed -i '/^DROPBEAR_PORT=/d' "$DROPBEAR_CONF"
-        sed -i '/DROPBEAR_EXTRA_ARGS=.*-p/d' "$DROPBEAR_CONF"
-        echo "DROPBEAR_PORT=$new_port" >> "$DROPBEAR_CONF"
-        if grep -q "DROPBEAR_EXTRA_ARGS" "$DROPBEAR_CONF"; then
-            sed -i "s/DROPBEAR_EXTRA_ARGS=\"/DROPBEAR_EXTRA_ARGS=\"-p $new_port /" "$DROPBEAR_CONF"
-        fi
-    fi
-    systemctl restart dropbear >/dev/null 2>&1
+    
+    # Detener servicio actual
+    pkill dropbear 2>/dev/null || true
+    systemctl stop dropbear 2>/dev/null || true
+    
+    # Actualizar configuración
+    cat > "$DROPBEAR_CONF" << EOF
+# Configuración Dropbear - SinNombre SSH
+NO_START=0
+DROPBEAR_PORT=$new_port
+DROPBEAR_EXTRA_ARGS="-p $new_port -K 300 -t 600"
+DROPBEAR_BANNER=""
+EOF
+    
+    # Reiniciar servicio
+    systemctl restart dropbear >/dev/null 2>&1 || {
+        dropbear -p $new_port -R -E >/dev/null 2>&1 &
+    }
+    
     echo -e "${G}✓ Puerto configurado a: $new_port${N}"
     pause
+    return 0
 }
 
 restart_service() {
     show_header
     echo -e "${Y}Reiniciando Dropbear...${N}"
-    systemctl restart dropbear >/dev/null 2>&1
+    pkill dropbear 2>/dev/null || true
+    systemctl restart dropbear >/dev/null 2>&1 || {
+        dropbear -R -E >/dev/null 2>&1 &
+    }
     echo -e "${G}✓ Servicio reiniciado${N}"
     pause
+    return 0
 }
 
 uninstall_dropbear_custom() {
@@ -151,11 +175,12 @@ uninstall_dropbear_custom() {
     if ! is_installed; then
         echo -e "${Y}Dropbear no está instalado.${N}"
         pause
-        return
+        return 0
     fi
     read -r -p "¿Desea eliminar Dropbear completamente? (s/n): " confirm
     if [[ "${confirm,,}" == "s" ]]; then
         echo -e "${Y}Eliminando...${N}"
+        pkill dropbear 2>/dev/null || true
         systemctl stop dropbear 2>/dev/null || true
         systemctl disable dropbear 2>/dev/null || true
         apt-get purge -y dropbear* >/dev/null 2>&1 || true
@@ -167,6 +192,7 @@ uninstall_dropbear_custom() {
         echo -e "${G}Eliminación cancelada.${N}"
     fi
     pause
+    return 0
 }
 
 list_ports_menu() {
@@ -174,16 +200,22 @@ list_ports_menu() {
     hr
     local ports
     ports=$(get_ports)
-    [[ -z "$ports" ]] && echo -e "${Y}No hay puertos Dropbear activos.${N}" && pause && return
-    local arr_ports
-    IFS=',' read -ra arr_ports <<<"$ports"
-    echo -e "${W}Puertos usados Dropbear:${N}"
-    local i=1
-    for port in "${arr_ports[@]}"; do
-        echo -e "${R}[${Y}$i${R}]${N} ${G}$port${N}"
-        ((i++))
-    done
+    if [[ -z "$ports" ]]; then
+        echo -e "${Y}No hay puertos Dropbear activos.${N}"
+        echo -e "${Y}Verificando procesos...${N}"
+        pgrep dropbear && echo -e "${G}Dropbear está corriendo en segundo plano${N}" || echo -e "${R}Dropbear no está corriendo${N}"
+    else
+        local arr_ports
+        IFS=',' read -ra arr_ports <<<"$ports"
+        echo -e "${W}Puertos usados Dropbear:${N}"
+        local i=1
+        for port in "${arr_ports[@]}"; do
+            echo -e "${R}[${Y}$i${R}]${N} ${G}$port${N}"
+            ((i++))
+        done
+    fi
     pause
+    return 0
 }
 
 main_menu() {
@@ -230,6 +262,9 @@ main_menu() {
         esac
     done
 }
+
+# Manejo seguro de señales
+trap '' SIGINT SIGTERM
 
 case "${1:-}" in
     "--install"|"-i")
