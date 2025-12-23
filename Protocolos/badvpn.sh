@@ -256,7 +256,7 @@ main_menu(){
       4) restart_srv ;;
       5) logs ;;
       6) uninstall_all ;;
-      0) bash "${ROOT_DIR}/Protocolos/menu.sh" ;;
+      0)  break ;;
       *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac
   done
