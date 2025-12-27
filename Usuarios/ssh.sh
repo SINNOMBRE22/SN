@@ -15,6 +15,7 @@ M='\033[0;35m'
 C='\033[0;36m'
 W='\033[1;37m'
 N='\033[0m'
+NC='\033[0m'
 
 # ================= MENSAJES =================
 msg() {
@@ -288,7 +289,7 @@ new_user(){
   clear
   usuarios_ativos=('' $(mostrar_usuarios))
   msg -bar
-  print_center -ama "$(fun_trans "CREAR USUARIOS")"
+  print_center -ama "$(fun_trans "                       CREAR USUARIOS")"
   msg -bar
   data_user
   back
@@ -488,7 +489,7 @@ Tiempo=15" > ${Default}
         tmp="$(cat ${Default}|grep "Tiempo"|cut -d "=" -f2)"
 
         title "CONF DE USUARIO TEMPORAL"
-        print_center -teal "Usuario Default"
+        print_center "${NC}Usuario Default"
         msg -bar3
         echo -e " $(msg -verm2 "IP:        ") $(msg -ama "$(fun_ip)")"
         echo -e " $(msg -verm2 "Usuario:   ") $(msg -ama "$name")"
@@ -1123,7 +1124,7 @@ do
 "ELIMINAR USUARIOS VENCIDOS" \
 "⚠️ $(msg -verm2 "ELIMINAR TODOS LOS USUARIOS") ⚠️\n$(msg -bar3)" \
 "BACKUP USUARIOS" \
-"-bar DESACTIVAR PASS ALFANUMERICO $(msg -blu "(VULTR)")" \
+"${G}DESACTIVAR PASS ALFANUMERICO $(msg ${B} "(VULTR)")" \
 "CAMBIAR A MODO HWID/TOKEN"
 
         back
