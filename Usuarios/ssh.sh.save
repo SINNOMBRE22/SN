@@ -17,47 +17,38 @@ W='\033[1;37m'
 N='\033[0m'
 
 # ================= MENSAJES =================
-msg() {
-  case $1 in
-    -bar) echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}" ;;
-    -bar3) echo -e "${R}────────────────────────── / / / ─────────────────────────${N}" ;;
-    -verd) echo -e "${G}$2${N}" ;;
-    -verm|-verm2) echo -e "${R}$2${N}" ;;
-    -ama) echo -e "${Y}$2${N}" ;;
-    -azu|-nazu) echo -e "${C}$2${N}" ;;
-    -nama) echo -ne "${Y}$2${N}" ;;
-    -ne) echo -ne "$2" ;;
-    *) echo -e "$*" ;;
-  esac
-}
+
 
 # ================= TITULO =================
+# TITULO
 title() {
   clear
   msg -bar
-  echo -e "${R}[ ${G}● ${W}$* ${G}● ${R}]${N}"
+  echo -e "${WHITE} $* ${RESET}"
   msg -bar
 }
-
 
 # TEXTO CENTRADO
 print_center() {
   msg "$1" "$2"
 }
+
 # BACK
 back() {
-  msg -bar3
-  echo -e "${R}[${Y}0${R}]${N}  ${C}Volver${N}"
-  msg -bar3
+  msg -bar
+  echo -e "${CYAN} 0) Volver${RESET}"
+  msg -bar
 }
+
 # MENU
 menu_func() {
   local i=1
   for opt in "$@"; do
-    echo -e "${R}[${Y}$i${R}]${N}  ${C}$opt${N}"
+    echo -e " ${GREEN}$i)${RESET} $opt"
     ((i++))
   done
 }
+
 # SELECCION
 selection_fun() {
   local max=$1
@@ -1109,7 +1100,7 @@ do
                 fi
         done
 
-          title ${W} "        ADMINISTRACION DE USUARIOS SSH      "
+        title -ama "ADMINISTRACION DE USUARIOS SSH"
 
         menu_func "NUEVO USUARIO SSH ✏️ " \
 "CREAR USUARIO TEMPORAL✏️." \
