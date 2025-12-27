@@ -1,4 +1,5 @@
 #!/bin/bash
+#!/bin/bash
 
 # ================= AUTONOMIA SSH.SH =================
 
@@ -17,6 +18,7 @@ mkdir -p "$VPS_user" "$VPS_inst" "$USRdatabase"
 # menu
 # opciones
 # funciones
+
 # COLORES
 RED='\033[1;31m'
 GREEN='\033[1;32m'
@@ -42,7 +44,7 @@ msg() {
 }
 
 # TITULO
-title() {
+t⁰itle() {
   clear
   msg -bar
   echo -e "${WHITE} $* ${RESET}"
@@ -54,7 +56,7 @@ print_center() {
   msg "$1" "$2"
 }
 
-# BACK
+0# BACK
 back() {
   msg -bar
   echo -e "${CYAN} 0) Volver${RESET}"
@@ -104,7 +106,6 @@ enter() {
 }
 
 # ================= FIN AUTONOMIA =================
-
 
 USRdatabase="${VPS_user}/VPSuser"
 [[ ! -d ${VPS_user}/B-VPSuser ]] && mkdir ${VPS_user}/B-VPSuser
