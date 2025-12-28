@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -euo pipefail
 # ================= AUTONOMIA SSH.SH =================
 # >>> BLOQUE AUTONOMÍA (RUTAS SN) <<<
 VPS_user="/etc/SN"
@@ -21,7 +21,7 @@ NC='\033[0m'
 msg() {
   case $1 in
     -bar) echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}" ;;
-    -bar3) echo -e "${R}────────────────────────── / / / ─────────────────────────${N}" ;;
+    -bar3) echo -e "${R}─────────────────────────── / / / ──────────────────────────${N}" ;;
     -verd) echo -e "${G}$2${N}" ;;
     -verm|-verm2) echo -e "${R}$2${N}" ;;
     -ama) echo -e "${Y}$2${N}" ;;
@@ -91,6 +91,7 @@ droppids() {
 enter() {
   read -p " Presione ENTER para continuar"
 }
+
 # ================= FIN AUTONOMIA =================
 
 
@@ -1080,6 +1081,15 @@ limiter(){
                 0)return;;
         esac
 }
+
+invalid_option() {
+  clear_screen
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${B}                   OPCIÓN INVÁLIDA${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  sleep 2
+}
+
 
 USER_MODE(){
         title "SELECCIONE EL MODO QUE USARA POR DEFECTO"
