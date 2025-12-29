@@ -32,7 +32,7 @@ msg() {
   esac
 }
 
-# ================= TITULO =================
+# ================= TITULO[A =================
 title() {
   clear
   msg -bar
@@ -43,7 +43,9 @@ title() {
 
 # TEXTO CENTRADO
 print_center() {
-  msg "$1" "$2"
+  local texto="$1"
+  local color="${2:-}"  # Usa valor por defecto vacío si $2 no existe
+  msg "$texto" "$color"
 }
 # BACK
 back() {
@@ -512,56 +514,57 @@ Tiempo=15" > ${Default}
 #===========================================
 
 #=====REMOVER USUARIO=======================
-rm_user(){
-  #nome
-  if userdel --force "$1" ; then
-    sed -i "/$1/d" ${VPS_user}/passwd
-          print_center -verd "[$(fun_trans "Removido")]"
-  else
-          print_center -verm "[$(fun_trans "No Removido")]"
-  fi
+#=====REMOVER USUARIO=======================
+rm_user() {
+    #nome
+    if userdel --force "$1"; then
+        sed -i "/$1/d" ${VPS_user}/passwd
+        print_center -verd "[$(fun_trans "Removido")]"
+    else
+        print_center -verm "[$(fun_trans "No Removido")]"
+    fi
 }
 
-remove_user(){
-        clear
-        usuarios_ativos=('' $(mostrar_usuarios))
+remove_user() {
+    clear
+    usuarios_ativos=('' $(mostrar_usuarios))
+    msg -bar
+    print_center -ama "$(fun_trans "REMOVER USUARIOS")"
+    msg -bar
+    data_user
+    back
+    
+    print_center -ama "$(fun_trans "Escriba o Seleccione un Usuario")"
+    msg -bar
+    selection=""  # Inicializamos como cadena vacía en lugar de unset
+    while [[ -z "${selection}" ]]; do
+        msg -nazu "$(fun_trans "Seleccione Una Opcion"): " && read selection
+        tput cuu1 && tput dl1
+    done
+    [[ "${selection}" = "0" ]] && return
+    if [[ ! $(echo "${selection}" | egrep '[^0-9]') ]]; then
+        usuario_del="${usuarios_ativos[$selection]}"
+    else
+        usuario_del="$selection"
+    fi
+    [[ -z "$usuario_del" ]] && {
+        msg -verm "$(fun_trans "Error, Usuario Invalido")"
         msg -bar
-        print_center -ama "$(fun_trans "REMOVER USUARIOS")"
+        return 1
+    }
+    [[ ! $(echo "${usuarios_ativos[@]}" | grep -w "$usuario_del") ]] && {
+        msg -verm "$(fun_trans "Error, Usuario Invalido")"
         msg -bar
-        data_user
-        back
-
-        print_center -ama "$(fun_trans "Escriba o Seleccione un Usuario")"
-        msg -bar
-        unset selection
-        while [[ -z ${selection} ]]; do
-                msg -nazu "$(fun_trans "Seleccione Una Opcion"): " && read selection
-                tput cuu1 && tput dl1
-        done
-        [[ ${selection} = "0" ]] && return
-        if [[ ! $(echo "${selection}" | egrep '[^0-9]') ]]; then
-                usuario_del="${usuarios_ativos[$selection]}"
-        else
-                usuario_del="$selection"
-        fi
-        [[ -z $usuario_del ]] && {
-                msg -verm "$(fun_trans "Error, Usuario Invalido")"
-                msg -bar
-                return 1
-        }
-        [[ ! $(echo ${usuarios_ativos[@]}|grep -w "$usuario_del") ]] && {
-                msg -verm "$(fun_trans "Error, Usuario Invalido")"
-                msg -bar
-                return 1
-        }
-
-        print_center -ama "$(fun_trans "Usuario Seleccionado"): $usuario_del"
-        pkill -u $usuario_del
-        droplim=`droppids|grep -w "$usuario_del"|awk '{print $2}'` 
-        kill -9 $droplim &>/dev/null
-        rm_user "$usuario_del"
-        msg -bar
-        sleep 3
+        return 1
+    }
+    
+    print_center -ama "$(fun_trans "Usuario Seleccionado"): $usuario_del"
+    pkill -u "$usuario_del"
+    droplim=$(droppids | grep -w "$usuario_del" | awk '{print $2}')
+    kill -9 "$droplim" &>/dev/null
+    rm_user "$usuario_del"
+    msg -bar
+    sleep 3
 }
 
 #========RENOVAR USUARIOS==========
@@ -1081,15 +1084,6 @@ limiter(){
                 0)return;;
         esac
 }
-
-invalid_option() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${B}                   OPCIÓN INVÁLIDA${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  sleep 2
-}
-
 
 USER_MODE(){
         title "SELECCIONE EL MODO QUE USARA POR DEFECTO"
