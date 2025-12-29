@@ -1,4 +1,4 @@
-#!/bin/bash
+[A#!/bin/bash
 # ================= AUTONOMIA SSH.SH =================
 # >>> BLOQUE AUTONOMÍA (RUTAS SN) <<<
 VPS_user="/etc/SN"
@@ -774,92 +774,91 @@ eliminar_all(){
   return 1
 }
 #===============MONITOR================
-#===============MONITOR================
 sshmonitor(){
-  clear
+        clear
+        cat_users=$(cat "/etc/passwd"|grep 'home'|grep 'false'|grep -v 'syslog')
+        cab=$(printf '%-15s%-13s%-15s%-9s' 'USUARIO' 'STATUS' 'CONEXIONES' 'TIEMPO')
+        msg -bar 
+        echo -e "\E[41;1;37m $cab\E[0m"
+        msg -bar
+    for i in `echo "$cat_users"|awk -F ':' '{print $1}'`; do
+        user="$i"
+        s2ssh="$(echo "$cat_users"|grep -w "$i"|awk -F ':' '{print $5}'|cut -d ',' -f1)"
 
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}           📡 MONITOR DE USUARIOS SSH / VPN 📡${N}"
-  echo -e "${R}────────────────────────── / / / ──────────────────────────${N}"
+        if [[ "$(echo "$cat_users"| grep -w $i| wc -l)" = "1" ]]; then
+          sqd="$(ps -u $user | grep sshd | wc -l)"
+        else
+          sqd=00
+        fi
 
-  # ENCABEZADO (MISMO FORMATO QUE LAS FILAS)
-  printf " %-14s %-12s %-16s %-10s\n" \
-  "USUARIO" "ESTADO" "CONEXIONES" "TIEMPO"
+        [[ "$sqd" = "" ]] && sqd=0
+        if [[ -e /etc/openvpn/openvpn-status.log ]]; then
+          ovp="$(cat /etc/openvpn/openvpn-status.log | grep -E ,"$i", | wc -l)"
+        else
+          ovp=0
+        fi
 
-  echo -e "${R}────────────────────────── / / / ──────────────────────────${N}"
+        if netstat -nltp|grep 'dropbear'> /dev/null;then
+          drop="$(droppids | grep "$i" | wc -l)"
+        else
+          drop=0
+        fi
 
-  # usuarios válidos
-  cat_users=$(awk -F: '$3>=1000 && $7 ~ /false/ {print}' /etc/passwd)
+        cnx=$(($sqd + $drop))
+        conex=$(($cnx + $ovp))
+        if [[ $cnx -gt 0 ]]; then
+          tst="$(ps -o etime $(ps -u $i |grep sshd |awk 'NR==1 {print $1}')|awk 'NR==2 {print $1}')"
+          tst1=$(echo "$tst" | wc -c)
+        if [[ "$tst1" == "9" ]]; then 
+          timerr="$(ps -o etime $(ps -u $i |grep sshd |awk 'NR==1 {print $1}')|awk 'NR==2 {print $1}')"
+        else
+          timerr="$(echo "00:$tst")"
+        fi
+        elif [[ $ovp -gt 0 ]]; then
+          tmp2=$(printf '%(%H:%M:%S)T\n')
+          tmp1="$(grep -w "$i" /etc/openvpn/openvpn-status.log |awk '{print $4}'| head -1)"
+          [[ "$tmp1" = "" ]] && tmp1="00:00:00" && tmp2="00:00:00"
+          var1=`echo $tmp1 | cut -c 1-2`
+          var2=`echo $tmp1 | cut -c 4-5`
+          var3=`echo $tmp1 | cut -c 7-8`
+          var4=`echo $tmp2 | cut -c 1-2`
+          var5=`echo $tmp2 | cut -c 4-5`
+          var6=`echo $tmp2 | cut -c 7-8`
+          calc1=`echo $var1*3600 + $var2*60 + $var3 | bc`
+          calc2=`echo $var4*3600 + $var5*60 + $var6 | bc`
+          seg=$(($calc2 - $calc1))
+          min=$(($seg/60))
+          seg=$(($seg-$min*60))
+          hor=$(($min/60))
+          min=$(($min-$hor*60))
+          timerusr=`printf "%02d:%02d:%02d \n" $hor $min $seg;`
+          timerr=$(echo "$timerusr" | sed -e 's/[^0-9:]//ig' )
+        else
+          timerr="00:00:00"
+        fi
 
-  for i in $(echo "$cat_users" | awk -F: '{print $1}'); do
+        if [[ "$s2ssh" != @(hwid|token) ]]; then
+          user=$(printf '%-15s' "$i")
+          con=$(printf '%-11s' "$conex/$s2ssh")
+        else
+          fix="$(echo "$cat_users"|grep -w "$i"|awk -F ':' '{print $5}'|cut -d ',' -f2)"
+          user=$(printf '%-15s' "$fix")
+          con=$(printf '%-11s' "$(echo $s2ssh|awk '{print toupper($0)}')")
+        fi
 
-    user="$i"
-
-    # ===== LIMITE =====
-    s2ssh=$(echo "$cat_users" | grep -w "$i" | awk -F: '{print $5}' | cut -d',' -f1)
-    [[ -z "$s2ssh" ]] && s2ssh=0
-
-    # ===== SSH =====
-    sshd=$(ps -u "$user" | grep sshd | wc -l)
-
-    # ===== DROPBEAR =====
-    if netstat -nltp | grep dropbear >/dev/null; then
-      drop=$(ps aux | grep dropbear | grep "$user" | wc -l)
-    else
-      drop=0
-    fi
-
-    # ===== OPENVPN =====
-    if [[ -e /etc/openvpn/openvpn-status.log ]]; then
-      ovp=$(grep -E ",$user," /etc/openvpn/openvpn-status.log | wc -l)
-    else
-      ovp=0
-    fi
-
-    # ===== CONEXIONES =====
-    cnx=$((sshd + drop))
-    conex=$((cnx + ovp))
-
-    # ===== TIEMPO =====
-    if [[ $cnx -gt 0 ]]; then
-      pid=$(ps -u "$user" | grep sshd | awk 'NR==1{print $1}')
-      timerr=$(ps -o etime= -p "$pid" | sed 's/^ *//')
-      [[ ${#timerr} -lt 8 ]] && timerr="00:$timerr"
-    elif [[ $ovp -gt 0 ]]; then
-      tmp2=$(date +%H:%M:%S)
-      tmp1=$(grep -w "$user" /etc/openvpn/openvpn-status.log | awk '{print $4}' | head -1)
-      [[ -z "$tmp1" ]] && tmp1="00:00:00" && tmp2="00:00:00"
-
-      calc1=$(echo "${tmp1:0:2}*3600 + ${tmp1:3:2}*60 + ${tmp1:6:2}" | bc)
-      calc2=$(echo "${tmp2:0:2}*3600 + ${tmp2:3:2}*60 + ${tmp2:6:2}" | bc)
-
-      seg=$((calc2-calc1))
-      hor=$((seg/3600))
-      min=$(((seg%3600)/60))
-      seg=$((seg%60))
-      timerr=$(printf "%02d:%02d:%02d" $hor $min $seg)
-    else
-      timerr="00:00:00"
-    fi
-
-    # ===== FORMATO LIMPIO (SIN COLORES) =====
-    userf=$(printf '%-14s' "$user")
-    estado_txt=$(printf '%-12s' "$( [[ $conex -eq 0 ]] && echo OFFLINE || echo ONLINE )")
-    conf=$(printf '%-14s' "$conex/$s2ssh")
-    timef=$(printf '%-10s' "$timerr")
-
-    # ===== COLOR DE ESTADO =====
-    [[ $conex -eq 0 ]] && estado_color=$R || estado_color=$G
-
-    # ===== IMPRESIÓN FINAL =====
-    printf " ${Y}%-14s${N} ${estado_color}%-14s${N} ${G}%-14s${N} ${Y}%-10s${N}\n" \
-    "$userf" "$estado_txt" "$conf" "$timef"
-   echo -e "${R}─────────────────────────── / / / ──────────────────────────${N}"
-   done
-  echo -e "${Y}            ►► Presione ENTER para continuar ◄◄${N}"
-  read
+        if [[ $conex -eq 0 ]]; then
+           status=$(printf '%-16s' 'Offline')
+           echo -e " $(msg -ama "$user")$(msg -verm2 "$status")$(msg -verd "$con")$(msg -ama "$timerr")"
+        else
+           status=$(printf '%-16s' 'Online')
+           echo -e " $(msg -ama "$user")$(msg -verd "$status")$(msg -verd "$con")$(msg -ama "$timerr")"
+        fi
+        msg -bar3
+      done
+     msg -bar
+    print_center "$(msg -ama "►► Presione enter para continuar ◄◄")"
+    read
 }
-
 #===============FIN===============
 
 detail_user(){
