@@ -81,6 +81,21 @@ get_system_info() {
   ZONA_HORARIA="$(timedatectl 2>/dev/null | awk -F': ' '/Time zone/ {print $2}' | awk '{print $1}' || date +%Z)"
 
   read MEM_TOTAL MEM_USADA MEM_LIBRE <<< $(free -m | awk '/^Mem:/ {print $2, $3, $7}')
+
+  # Verificar dominio
+  DOMINIO=""
+  if [[ -f "/etc/SN/dominio.txt" ]]; then
+    DOMINIO="$(cat /etc/SN/dominio.txt)"
+  fi
+
+  # Verificar swap
+  SWAP_INFO=""
+  SWAP_TOTAL=$(free -m | awk '/^Swap:/ {print $2}')
+  if [[ "$SWAP_TOTAL" -gt 0 ]]; then
+    SWAP_USED=$(free -m | awk '/^Swap:/ {print $3}')
+    SWAP_FREE=$(free -m | awk '/^Swap:/ {print $4}')
+    SWAP_INFO="${Y}${SWAP_TOTAL} MB${W} > Uso: ${Y}${SWAP_USED} MB${W} > Libre: ${G}${SWAP_FREE} MB${N}"
+  fi
 }
 
 show_banner() {
@@ -88,15 +103,17 @@ show_banner() {
   get_system_info
   show_custom_banner
 
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}" #se agregqn 6 espacios
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}" #se agregqn 6 es[...]
   echo -e "${R}[ ${G}●            SinNombre - VPS Manager v1.0 ●${R} ]${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[${N} ${W}Sistema: ${G}${DISTRO}${N}"
   echo -e "${R}[${N} ${W}IP Publica: ${Y}${IP_PUBLICA}${N}"
+  [[ -n "$DOMINIO" ]] && echo -e "${R}[${N} ${W}Dominio: ${Y}${DOMINIO}${N}"
   echo -e "${R}[${N} ${W}Usuario: ${G}${USUARIO}${N}"
   echo -e "${R}[${N} ${W}Zona Horaria: ${Y}${ZONA_HORARIA}${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[${N} ${W}Memoria Ram: ${Y}${MEM_TOTAL} MB${W} > Uso: ${Y}${MEM_USADA} MB${W} > Libre: ${G}${MEM_LIBRE} MB${R} ]${N}"
+  [[ -n "$SWAP_INFO" ]] && echo -e "${R}[${N} ${W}Memoria Swap: ${SWAP_INFO}${R} ]${N}"
 }
 
 get_systemd_unit_by_pid() {
