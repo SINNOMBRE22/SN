@@ -141,31 +141,10 @@ get_service_type() {
   local proc="$1"
   local unit="$2"
   if [[ -n "${unit:-}" ]]; then
-    case "$unit" in
-      ssh.service|sshd.service) echo "SSH" ;;
-      dropbear.service) echo "DROPBEAR" ;;
-      stunnel4.service) echo "STUNNEL" ;;
-      squid.service|squid3.service) echo "SQUID" ;;
-      python.[0-9]*.service) echo "SOCKS(PY)" ;;
-      xray.service|v2ray.service) echo "PROXY" ;;
-      nginx.service|apache2.service) echo "WEB" ;;
-      *) echo "DESCONOCIDO" ;;
-    esac
-    return 0
+    echo "${unit%.service}"  # Nombre exacto del servicio systemd
+  else
+    echo "$proc"  # Nombre exacto del proceso
   fi
-
-  case "$proc" in
-    sshd|ssh) echo "SSH" ;;
-    dropbear) echo "DROPBEAR" ;;
-    stunnel4|stunnel) echo "STUNNEL" ;;
-    squid|squid3) echo "SQUID" ;;
-    python|python2|python2.7|python3|gunicorn|uwsgi) echo "PYTHON" ;;
-    nginx|apache2|httpd) echo "WEB" ;;
-    v2ray|xray|trojan) echo "PROXY" ;;
-    named|bind9) echo "DNS" ;;
-    dhclient|systemd-networkd|NetworkManager) echo "DHCP" ;;
-    *) echo "DESCONOCIDO" ;;
-  esac
 }
 
 show_services_status() {
@@ -173,34 +152,36 @@ show_services_status() {
   echo -e "${W}                   SERVICIOS ACTIVOS${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 
-  local listening_ports
-  listening_ports="$(ss -H -lntup 2>/dev/null | awk '{print $5}' | awk -F':' '{print $NF}' | sort -n | uniq || true)"
+  local lines
+  lines="$(ss -H -lntup 2>/dev/null || true)"
 
-  if [[ -z "${listening_ports:-}" ]]; then
-    echo -e "${Y}No se encontraron servicios activos${N}"
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-    echo ""
-    return 0
-  fi
+  declare -A services_ports
 
-  declare -a ports_array=()
-  declare -a services_array=()
+  while read -r line; do
+    [[ -z "$line" ]] && continue
 
-  while read -r port; do
-    [[ -n "${port:-}" ]] || continue
-    [[ "${port}" =~ ^[0-9]+$ ]] || continue
-    local pp proc pid unit service
-    pp="$(get_proc_pid_by_port "$port")"
-    proc="${pp%%|*}"
-    pid="${pp#*|}"
+    local port proc pid unit
+    port="$(echo "$line" | awk '{print $5}' | awk -F':' '{print $NF}')"
+    [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]] && continue
+
+    proc="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' || true)"
+    pid="$(echo "$line" | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' || true)"
     unit=""
-    [[ -n "${pid:-}" ]] && unit="$(get_systemd_unit_by_pid "$pid")"
-    service="$(get_service_type "$proc" "$unit")"
-    ports_array+=("$port")
-    services_array+=("$service")
-  done <<< "$listening_ports"
+    [[ -n "$pid" ]] && unit="$(systemctl show -p Unit --value "$pid" 2>/dev/null || true)"
 
-  local count="${#ports_array[@]}"
+    local service
+    service="$(get_service_type "$proc" "$unit")"
+
+    if [[ -n "${services_ports[$service]:-}" ]]; then
+      if [[ "${services_ports[$service]}" != *"$port"* ]]; then
+        services_ports[$service]="${services_ports[$service]}, $port"
+      fi
+    else
+      services_ports[$service]="$port"
+    fi
+  done <<< "$lines"
+
+  local count="${#services_ports[@]}"
   if [[ "$count" -eq 0 ]]; then
     echo -e "${Y}No se encontraron servicios activos${N}"
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
@@ -208,14 +189,15 @@ show_services_status() {
     return 0
   fi
 
+  local keys=("${!services_ports[@]}")
+  IFS=$'\n' keys=($(sort <<<"${keys[*]}"))
+  unset IFS
+
   local half=$(( (count + 1) / 2 ))
   for ((i = 0; i < half; i++)); do
-    if [[ $i -lt $count ]]; then
-      printf "${C}%-12s${W}: ${G}%-7s${N}" "${services_array[$i]}" "${ports_array[$i]}"
-    fi
-    printf "  "
-    if [[ $((i + half)) -lt $count ]]; then
-      printf "${C}%-12s${W}: ${G}%-7s${N}" "${services_array[$((i + half))]}" "${ports_array[$((i + half))]}"
+    printf "${C}%-10s${W}: ${G}%-10s${N}" "${keys[$i]}" "${services_ports[${keys[$i]}]}"
+    if [[ $((i + half)) -lt count ]]; then
+      printf "  ${C}%-15s${W}: ${G}%-15s${N}" "${keys[$((i + half))]}" "${services_ports[${keys[$((i + half))]}]}"
     fi
     echo ""
   done
