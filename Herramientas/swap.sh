@@ -31,12 +31,14 @@ funcion_crear() {
     pause
     return
   fi
-  memoria=$(dmidecode --type memory | grep ' MB' | awk '{print $2}')
-  if [[ "$memoria" -gt "2048" ]]; then
-    echo -e "${Y}No es necesario swap (más de 2GB RAM)${N}"
+
+  MEM_TOTAL=$(free -m | awk '/^Mem:/ {print $2}')
+  if [[ "$MEM_TOTAL" -gt "2048" ]]; then
+    echo -e "${Y}Tu sistema tiene más de 2GB de RAM, no es necesario crear swap${N}"
     pause
     return
   fi
+
   echo -e "${Y}Creando swapfile de 2GB${N}"
   fallocate -l 2G /swapfile
   chmod 600 /swapfile

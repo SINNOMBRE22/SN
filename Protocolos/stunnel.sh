@@ -10,6 +10,7 @@ set -euo pipefail
 #   * Idempotente (no duplica reglas)
 #   * Opción de persistencia (iptables-persistent/netfilter-persistent)
 # - Mejora detección de servicio inactivo usando systemctl is-active
+# - Opción para elegir certificado SSL antes de instalar (usar existente, default, o agregar)
 # =========================================================
 
 R='\033[0;31m'
@@ -89,20 +90,51 @@ ensure_enabled(){
   else
     echo "ENABLED=1" >> "$DEFAULTS"
   fi
+  systemctl enable stunnel4 >/dev/null 2>&1 || true
 }
 
 gen_pem(){
-  [[ -f "$PEM" ]] && return 0
   mkdir -p /etc/stunnel >/dev/null 2>&1 || true
 
   local tmp="/tmp/sn_stunnel.$$"
   mkdir -p "$tmp"
   openssl genrsa -out "$tmp/stunnel.key" 2048 >/dev/null 2>&1
-  (echo "" ; echo "" ; echo "" ; echo "" ; echo "" ; echo "" ; echo "@cloudflare") \
-    | openssl req -new -key "$tmp/stunnel.key" -x509 -days 1000 -out "$tmp/stunnel.crt" >/dev/null 2>&1
+  openssl req -new -key "$tmp/stunnel.key" -x509 -days 1000 -out "$tmp/stunnel.crt" -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" >/dev/null 2>&1
   cat "$tmp/stunnel.key" "$tmp/stunnel.crt" > "$PEM"
   chmod 600 "$PEM" >/dev/null 2>&1 || true
-  rm -rf "$tmp" >/dev/null 2>&1 || true
+
+  # Validar que el cert sea PEM válido
+  if openssl x509 -in "$PEM" -text >/dev/null 2>&1; then
+    rm -rf "$tmp" >/dev/null 2>&1 || true
+    return 0
+  else
+    rm -rf "$tmp" "$PEM" >/dev/null 2>&1 || true
+    return 1
+  fi
+}
+
+choose_cert(){
+    local db="$(ls /etc/SN/cert 2>/dev/null)"
+    if [[ ! "$(echo "$db"|grep ".crt")" = "" ]]; then
+        local cert=$(echo "$db"|grep ".crt")
+        local key=$(echo "$db"|grep ".key")
+        echo -e "${Y}CERTIFICADO SSL ENCONTRADO${N}"
+        echo -e "${C}CERT:${N} ${Y}$cert${N}"
+        echo -e "${C}KEY:${N} ${Y}$key${N}"
+        echo -ne "${W}Continuar, usando este certificado [S/N]: ${G}"
+        read opcion
+        if [[ $opcion = @(s|S) ]]; then
+            cp /etc/SN/cert/$cert /tmp/stunnel.crt
+            cp /etc/SN/cert/$key /tmp/stunnel.key
+            cat /tmp/stunnel.key /tmp/stunnel.crt > "$PEM"
+            chmod 600 "$PEM"
+            rm -f /tmp/stunnel.crt /tmp/stunnel.key
+            echo -e "${G}Usando certificado existente.${N}"
+            return
+        fi
+    fi
+    gen_pem
+    echo -e "${G}Generando certificado por defecto.${N}"
 }
 
 service_restart(){
@@ -258,11 +290,13 @@ ssl_stunel(){
   done
 
   sep
+  choose_cert
+  sep
   echo -e "${W}Instalando stunnel4...${N}"
   sep
   apt-get install -y stunnel4 openssl >/dev/null 2>&1 || true
+  systemctl daemon-reload >/dev/null 2>&1 || true
 
-  gen_pem
   ensure_enabled
 
   echo -e "client = no\n[SSL]\ncert = /etc/stunnel/stunnel.pem\naccept = ${opc2}\nconnect = 127.0.0.1:${drop[$opc]}" > "$CONF"
@@ -406,8 +440,8 @@ del_port(){
   local opc=""
   while [[ -z "${opc:-}" ]]; do
     read -r -p " opcion: " opc
-    [[ "${opc:-}" =~ ^[0-9]+$ ]] || { opc=""; continue; }
-    [[ -n "${drop[$opc]:-}" ]] || { opc=""; continue; }
+    [[ "${opc:-}" =~ ^[0-9]+$ ]] || { echo -e "${R}Solo números.${N}"; opc=""; continue; }
+    [[ -n "${drop[$opc]:-}" ]] || { echo -e "${R}Opción inválida.${N}"; opc=""; continue; }
   done
 
   local in en
@@ -537,7 +571,7 @@ main_menu(){
 
     echo -e "${R}[${Y}1${R}]${N} ${C}INSTALAR / DESINSTALAR${N}"
 
-    if is_installed; then
+    if is_on; then
       sep
       echo -e "${R}[${Y}2${R}]${N} ${C}AGREGAR PUERTOS SSL${N}"
       echo -e "${R}[${Y}3${R}]${N} ${C}QUITAR PUERTOS SSL${N}"
@@ -548,6 +582,9 @@ main_menu(){
       echo -e "${R}[${Y}6${R}]${N} ${C}INICIAR/PARAR SERVICIO SSL${N} ${st}"
       echo -e "${R}[${Y}7${R}]${N} ${C}REINICIAR SERVICIO SSL${N}"
       echo -e "${R}[${Y}8${R}]${N} ${C}APLICAR FIX SSL LENTO (MSS/MTU)${N} ${mss}"
+    else
+      sep
+      echo -e "${R}[${Y}6${R}]${N} ${C}INICIAR/PARAR SERVICIO SSL${N} ${st}"
     fi
 
     hr
@@ -560,13 +597,13 @@ main_menu(){
 
     case "${op:-}" in
       1) ssl_stunel ;;
-      2) add_port ;;
-      3) del_port ;;
-      4) edit_port ;;
-      5) edit_nano ;;
+      2) is_on && add_port || { echo -e "${R}Servicio no está corriendo.${N}"; sleep 1; } ;;
+      3) is_on && del_port || { echo -e "${R}Servicio no está corriendo.${N}"; sleep 1; } ;;
+      4) is_on && edit_port || { echo -e "${R}Servicio no está corriendo.${N}"; sleep 1; } ;;
+      5) is_on && edit_nano || { echo -e "${R}Servicio no está corriendo.${N}"; sleep 1; } ;;
       6) start_stop ;;
-      7) restart_srv ;;
-      8) ask_apply_ssl_fix; pause ;;
+      7) is_on && restart_srv || { echo -e "${R}Servicio no está corriendo.${N}"; sleep 1; } ;;
+      8) is_on && ask_apply_ssl_fix || { echo -e "${R}Servicio no está corriendo.${N}"; sleep 1; } ;;
       0)  break ;;
       *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac

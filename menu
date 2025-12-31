@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
 
 # =========================================================
 # SinNombre v2.0 - Panel CLI (Ubuntu 22.04+)
