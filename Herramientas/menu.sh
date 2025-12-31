@@ -24,6 +24,22 @@ pause() {
   read -r -p "Presiona Enter para continuar..."
 }
 
+run_module() {
+  local rel="$1"
+  local path="${ROOT_DIR}/${rel}"
+  if [[ -f "$path" ]]; then
+    bash "$path"
+    clear_screen
+  else
+    echo ""
+    echo -e "${Y}Módulo no disponible:${N} ${C}${rel}${N}"
+    echo -e "${Y}Estado:${N} En desarrollo..."
+    pause
+  fi
+}
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 run_speedtest() {
   clear_screen
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
@@ -109,17 +125,6 @@ configure_domain() {
   pause
 }
 
-configure_timezone() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}               CONFIGURAR ZONA HORARIA${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}Configurando zona horaria...${N}"
-  dpkg-reconfigure tzdata
-  echo -e "${G}Zona horaria configurada.${N}"
-  pause
-}
-
 view_system_logs() {
   clear_screen
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
@@ -140,34 +145,6 @@ restart_services() {
   systemctl restart cron 2>/dev/null || true
   systemctl restart rsyslog 2>/dev/null || true
   echo -e "${G}Servicios reiniciados.${N}"
-  pause
-}
-
-generate_ssl_cert() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}            GENERAR/RENOVAR CERTIFICADO SSL${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  if [[ -f "${VPS_src}/dominio.txt" ]]; then
-    domain=$(cat "${VPS_src}/dominio.txt")
-    echo -e "${Y}Generando certificado para: $domain${N}"
-    if command -v certbot &>/dev/null; then
-      certbot certonly --standalone -d "$domain" --agree-tos --email admin@"$domain" --non-interactive
-      echo -e "${G}Certificado generado. Copiando a $VPS_crt...${N}"
-      mkdir -p "$VPS_crt"
-      cp /etc/letsencrypt/live/"$domain"/fullchain.pem "$VPS_crt/${domain}.crt"
-      cp /etc/letsencrypt/live/"$domain"/privkey.pem "$VPS_crt/${domain}.key"
-    else
-      echo -e "${Y}Instalando certbot...${N}"
-      apt update && apt install -y certbot
-      certbot certonly --standalone -d "$domain" --agree-tos --email admin@"$domain" --non-interactive
-      mkdir -p "$VPS_crt"
-      cp /etc/letsencrypt/live/"$domain"/fullchain.pem "$VPS_crt/${domain}.crt"
-      cp /etc/letsencrypt/live/"$domain"/privkey.pem "$VPS_crt/${domain}.key"
-    fi
-  else
-    echo -e "${Y}No hay dominio configurado. Usa la opción 6 primero.${N}"
-  fi
   pause
 }
 
@@ -215,9 +192,11 @@ main_menu() {
     echo -e "${R}───────────────────────────────────────────────────────────${N}"
     echo -e "${R}[${Y}9${R}]${N}  ${C}Reiniciar Servicios${N}"
     echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}10${R}]${N} ${C}Generar Certificado SSL${N}"
+    echo -e "${R}[${Y}10${R}]${N} ${C}Auto Inicio del Script${N}"
     echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}11${R}]${N} ${C}Auto Inicio del Script${N}"
+    echo -e "${R}[${Y}11${R}]${N} ${C}Gestión de Certificados SSL${N}"
+    echo -e "${R}───────────────────────────────────────────────────────────${N}"
+    echo -e "${R}[${Y}12${R}]${N} ${C}Gestión de Memoria Swap${N}"
     echo -e "${R}───────────────────────────────────────────────────────────${N}"
     echo -e "${R}[${Y}0${R}]${N}  ${C}VOLVER${N}"
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
@@ -232,11 +211,12 @@ main_menu() {
       4) clean_cache ;;
       5) change_root_pass ;;
       6) configure_domain ;;
-      7) configure_timezone ;;
+      7) run_module "zonahora.sh" ;;
       8) view_system_logs ;;
       9) restart_services ;;
-      10) generate_ssl_cert ;;
-      11) auto_start_script ;;
+      10) auto_start_script ;;
+      11) run_module "ssl.sh" ;;
+      12) run_module "swap.sh" ;;
       0) return 0 ;;
       *)
         invalid_option
