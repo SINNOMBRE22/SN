@@ -34,7 +34,7 @@ N='\033[0m'
 # ===== MENSAJES =====
 msg() {
   case "$1" in
-    -bar)   echo -e "${R}══════════════════════════════════════════${N}" ;;
+    -bar)   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}" ;;
     -bar3)  echo -e "${R}──────────────────────────────────────────${N}" ;;
     -verd)  echo -e "${G}$2${N}" ;;
     -verm|-verm2) echo -e "${R}$2${N}" ;;
@@ -95,6 +95,15 @@ selection_fun() {
 # ===== INPUT =====
 in_opcion() {
   read -p " $1: " opcion
+}
+
+# ===== LIMPIAR PANTALLA =====
+clear_screen() { clear; }
+
+# ===== PAUSA =====
+pause() {
+  echo ""
+  read -r -p "Presiona Enter para continuar..."
 }
 
 restart(){
@@ -296,21 +305,38 @@ respaldo(){
 
 while :
 do
-        title "GESTION DE USUARIOS V2RAY"
-        menu_func "$(msg -verd "CREAR USUARIOS")" \
-        "$(msg -verm2 "ELIMINAR USUARIOS")" \
-        "BLOQUEAR USUARIOS $(msg -verm2 "(no disponible!)")" \
-        "$(msg -ama "VMESS DE USUARIOS")" \
-        "RESPALDO DE SEGURIDAD"
-        back
-        opcion=$(selection_fun 5)
-        case $opcion in
+        clear_screen
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo -e "${W}              GESTION DE USUARIOS V2RAY${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo ""
+        echo -e "${W}                     MENU USUARIOS${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo -e "${R}[${Y}1${R}]${N}  ${C}CREAR USUARIOS${N}"
+        echo -e "${R}[${Y}2${R}]${N}  ${C}ELIMINAR USUARIOS${N}"
+        echo -e "${R}[${Y}3${R}]${N}  ${C}VMESS DE USUARIOS${N}"
+        echo -e "${R}[${Y}4${R}]${N}  ${C}RESPALDO DE SEGURIDAD${N}"
+        echo -e "${R}[${Y}5${R}]${N}  ${C}BLOQUEAR USUARIOS${N}"
+        echo -e "${R}[${Y}0${R}]${N}  ${C}VOLVER${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo ""
+        echo -ne "${W}Selecciona una opción: ${G}"
+        read -r opcion
+
+        case "${opcion:-}" in
                 1)newuser;;
                 2)deluser;;
-                3);;
-                4)datos;;
-                5)respaldo;;
+                3)datos;;
+                4)respaldo;;
+                5);;
                 0)break;;
+                *)
+                        clear_screen
+                        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+                        echo -e "${B}                   OPCIÓN INVÁLIDA${N}"
+                        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+                        sleep 2
+                        ;;
         esac
 done
 exit 0

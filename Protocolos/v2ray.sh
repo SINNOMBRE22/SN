@@ -33,7 +33,7 @@ N='\033[0m'
 # ===== MENSAJES =====
 msg() {
   case "$1" in
-    -bar)   echo -e "${R}══════════════════════════════════════════${N}" ;;
+    -bar)   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}" ;;
     -bar3)  echo -e "${R}──────────────────────────────────────────${N}" ;;
     -verd)  echo -e "${G}$2${N}" ;;
     -verm|-verm2) echo -e "${R}$2${N}" ;;
@@ -355,17 +355,27 @@ if ! is_installed; then
     while :
     do
         clear
-        msg -bar
-        print_center -verd "v2ray manager by @Sin_Nombre22"
-        msg -bar
-        msg -ama "INSTALACIÓN"
-        msg -bar3
-        menu_func "$(msg -verd "INSTALAR V2RAY")"
-        back
-        opcion=$(selection_fun 1)
-        case $opcion in
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo -e "${W}              V2RAY MANAGER BY @SIN_NOMBRE22${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo ""
+        echo -e "${W}                     INSTALACIÓN${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo -e "${R}[${Y}1${R}]${N}  ${C}INSTALAR V2RAY${N}              ${R}[${Y}0${R}]${N}  ${C}VOLVER${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo ""
+        echo -ne "${W}Selecciona una opción: ${G}"
+        read -r opcion
+        case "${opcion:-}" in
             1) ins_v2r; break ;;
             0) exit 0 ;;
+            *)
+                clear
+                echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+                echo -e "${B}                   OPCIÓN INVÁLIDA${N}"
+                echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+                sleep 2
+                ;;
         esac
     done
 fi
@@ -373,38 +383,51 @@ fi
 while :
 do
         clear
-        msg -bar
-        print_center -verd "v2ray manager by @Sin_Nombre22"
-        msg -bar
-        msg -ama "INSTALACIÓN"
-        msg -bar3
-        menu_func "$(msg -verd "INSTALL/RE-REINSTALL V2RAY")" \
-        "$(msg -verm2 "DESINSTALAR V2RAY")\n$(msg -bar3)\n$(msg -ama "CONFIGURACIÓN")\n$(msg -bar3)" \
-        "Certif ssl/tls $(msg -ama "(menu nativo)")" \
-        "Protocolos $(msg -ama "(menu nativo)")" \
-        "puerto" \
-        "alterId" \
-        "Conf v2ray $(msg -ama "(menu nativo)")\n$(msg -bar3)\n$(msg -ama "CLIENTES")\n$(msg -bar3)" \
-        "address" \
-        "Host" \
-        "Path\n$(msg -bar3)\n$(msg -ama "EXTRAS")\n$(msg -bar3)" \
-        "Restablecer ajustes"
-        back
-        opcion=$(selection_fun 11)
-        case $opcion in
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo -e "${W}              V2RAY MANAGER BY @SIN_NOMBRE22${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo ""
+        echo -e "${W}                       INSTALACIÓN${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo -e "${R}[${Y}1${R}]${N}  ${C}INSTALL/RE-REINSTALL V2RAY${N}  ${R}[${Y}2${R}]${N}  ${C}DESINSTALAR V2RAY${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo -e "${W}                   CONFIGURACIÓN BÁSICA${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo -e "${R}[${Y}3${R}]${N}  ${C}Configurar Puerto${N}"
+        echo -e "${R}[${Y}4${R}]${N}  ${C}Configurar AlterId${N}"
+        echo -e "${R}[${Y}5${R}]${N}  ${C}Configurar Address${N}"
+        echo -e "${R}[${Y}6${R}]${N}  ${C}Configurar Host${N}"
+        echo -e "${R}[${Y}7${R}]${N}  ${C}Configurar Path${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo -e "${W}                 CONFIGURACIÓN AVANZADA${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo -e "${R}[${Y}8${R}]${N}  ${C}Certificado SSL/TLS${N}         ${R}[${Y}9${R}]${N}  ${C}Protocolos V2Ray${N}"
+        echo -e "${R}[${Y}10${R}]${N} ${C}Configuración Nativa${N}         ${R}[${Y}11${R}]${N} ${C}Restablecer Ajustes${N}"
+        echo -e "${R}───────────────────────────────────────────────────────────${N}"
+        echo -e "${R}[${Y}0${R}]${N}  ${C}VOLVER${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+        echo ""
+        echo -ne "${W}Selecciona una opción: ${G}"
+        read -r opcion
+        case "${opcion:-}" in
                 1)ins_v2r;;
                 2)removeV2Ray;;
-                3)v2ray_tls;;
-                4)v2ray_stream;;
-                5)port;;
-                6)alterid;;
-                7)n_v2ray;;
-                8)address;;
-                9)host;;
-                10)path;;
+                3)port;;
+                4)alterid;;
+                5)address;;
+                6)host;;
+                7)path;;
+                8)v2ray_tls;;
+                9)v2ray_stream;;
+                10)n_v2ray;;
                 11)reset;;
                 0)break;;
+                *)
+                        clear
+                        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+                        echo -e "${B}                   OPCIÓN INVÁLIDA${N}"
+                        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+                        sleep 2
+                        ;;
         esac
-        [[ "$?" = "1" ]] && break
 done
-exit 1

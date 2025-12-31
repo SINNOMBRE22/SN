@@ -88,7 +88,7 @@ show_banner() {
   get_system_info
   show_custom_banner
 
-  echo -e "${R}═════════════════════════════ / / / ═════════════════════════════${N}" #se agregqn 6 espacios
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}" #se agregqn 6 espacios
   echo -e "${R}[ ${G}●            SinNombre - VPS Manager v1.0 ●${R} ]${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[${N} ${W}Sistema: ${G}${DISTRO}${N}"
