@@ -190,17 +190,31 @@ show_services_status() {
   fi
 
   local keys=("${!services_ports[@]}")
-  IFS=$'\n' keys=($(sort <<<"${keys[*]}"))
-  unset IFS
+local count=${#keys[@]}
+local half=$(( (count + 1) / 2 ))
 
-  local half=$(( (count + 1) / 2 ))
-  for ((i = 0; i < half; i++)); do
-    printf "${C}%-10s${W}: ${G}%-10s${N}" "${keys[$i]}" "${services_ports[${keys[$i]}]}"
-    if [[ $((i + half)) -lt count ]]; then
-      printf "  ${C}%-15s${W}: ${G}%-15s${N}" "${keys[$((i + half))]}" "${services_ports[${keys[$((i + half))]}]}"
-    fi
-    echo ""
-  done
+for ((i = 0; i < half; i++)); do
+  # --- COLUMNA 1 ---
+  # Calculamos cuánto espacio ocupa el texto sin colores para compensar el alineado
+  # Nombre (${C}), Dos puntos (${W}), Puerto (${G})
+  printf "${C}%s${W}: ${G}%s${N}" "${keys[$i]}" "${services_ports[${keys[$i]}]}"
+  
+  # Calculamos el espacio necesario para que la segunda columna no se mueva.
+  # Si el nombre + puerto es corto, añadimos espacios manuales.
+  actual_len=$((${#keys[$i]} + ${#services_ports[${keys[$i]}]} + 2))
+  spacer=$((30 - actual_len))
+  if [ $spacer -gt 0 ]; then
+    printf "%${spacer}s" " "
+  fi
+
+  # --- COLUMNA 2 ---
+  if [[ $((i + half)) -lt count ]]; then
+    idx_der=$((i + half))
+    printf "${C}%s${W}: ${G}%s${N}" "${keys[$idx_der]}" "${services_ports[${keys[$idx_der]}]}"
+  fi
+  
+  echo "" 
+done
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
 
