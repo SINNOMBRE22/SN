@@ -2,9 +2,8 @@
 set -euo pipefail
 
 # =========================================================
-# SinNombre v1.0 - Panel CLI (Ubuntu 22.04+)
+# SinNombre v2.0 - Panel CLI (Ubuntu 22.04+)
 # Creador: @SIN_NOMBRE22
-# Archivo principal (sin extensión): SN/menu
 # =========================================================
 
 R='\033[0;31m'
@@ -89,7 +88,7 @@ show_banner() {
   get_system_info
   show_custom_banner
 
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${R}═════════════════════════════ / / / ═════════════════════════════${N}" #se agregqn 6 espacios
   echo -e "${R}[ ${G}●            SinNombre - VPS Manager v1.0 ●${R} ]${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[${N} ${W}Sistema: ${G}${DISTRO}${N}"

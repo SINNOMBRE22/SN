@@ -95,7 +95,16 @@ selection_fun() {
 in_opcion() {
   read -p " $1: " opcion
 }
-#===============FIN DE MOD==================
+
+# ===== VERIFICAR SI V2RAY ESTÁ INSTALADO =====
+is_installed() {
+  if command -v v2ray > /dev/null 2>&1; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 restart(){
         title "REINICIANDO V2RAY"
         if [[ "$(v2ray restart|awk '{printf $3}')" = "success" ]]; then
@@ -109,7 +118,7 @@ restart(){
 
 ins_v2r(){
         title "ESTA POR INSTALAR V2RAY!"
-        print_center -ama "La instalacion puede tener alguna fallas!\npor favor observe atentamente el log de intalacion.\npodria contener informacion sobre algunos errores!\ny deveran corregirse de forma manual antes de\ncontinuar usando el script."
+        print_center -ama "La instalación puede tener algunas fallas!\npor favor observe atentamente el log de instalación.\npodría contener información sobre algunos errores!\ny deberán corregirse de forma manual antes de\ncontinuar usando el script."
         enter
         source <(curl -sSL https://raw.githubusercontent.com/SINNOMBRE22/VPS-SN/main/utilidades/v2ray/v2ray.sh)
         #source <(curl -sL https://multi.netlify.app/v2ray.sh)
@@ -197,18 +206,18 @@ removeV2Ray(){
 
  port(){
          port=$(jq -r '.inbounds[].port' $config)
-         title "CONFING PERTO V2RAY"
+         title "CONFIG PUERTO V2RAY"
         print_center -azu "puerto actual: $(msg -ama "$port")"
         back
         in_opcion "Nuevo puerto"
         opcion=$(echo "$opcion" | tr -d '[[:space:]]')
         tput cuu1 && tput dl1
         if [[ -z "$opcion" ]]; then
-                msg -ne " deves ingresar una opcion"
+                msg -ne " debes ingresar una opción"
                 sleep 2
                 return
         elif [[ ! $opcion =~ $numero ]]; then
-                msg -ne " solo deves ingresar numeros"
+                msg -ne " solo debes ingresar números"
                 sleep 2
                 return
         elif [[ "$opcion" = "0" ]]; then
@@ -223,18 +232,18 @@ removeV2Ray(){
 
  alterid(){
          aid=$(jq -r '.inbounds[].settings.clients[0].alterId' $config)
-         title "CONFING alterId V2RAY"
+         title "CONFIG alterId V2RAY"
         print_center -azu "alterid actual: $(msg -ama "$aid")"
         back
         in_opcion "Nuevo alterid"
         opcion=$(echo "$opcion" | tr -d '[[:space:]]')
         tput cuu1 && tput dl1
         if [[ -z "$opcion" ]]; then
-                msg -ne " deves ingresar una opcion"
+                msg -ne " debes ingresar una opción"
                 sleep 2
                 return
         elif [[ ! $opcion =~ $numero ]]; then
-                msg -ne " solo deves ingresar numeros"
+                msg -ne " solo debes ingresar números"
                 sleep 2
                 return
         elif [[ "$opcion" = "0" ]]; then
@@ -248,21 +257,21 @@ removeV2Ray(){
  }
 
  n_v2ray(){
-         title "CONFIGRACION NATIVA V2RAY"
+         title "CONFIGURACIÓN NATIVA V2RAY"
          echo -ne "\033[1;37m"
         v2ray
  }
 
  address(){
          add=$(jq -r '.inbounds[].domain' $config) && [[ $add = null ]] && add=$(wget -qO- ipv4.icanhazip.com)
-         title "CONFING address V2RAY"
+         title "CONFIG address V2RAY"
         print_center -azu "actual: $(msg -ama "$add")"
         back
         in_opcion "Nuevo address"
         opcion=$(echo "$opcion" | tr -d '[[:space:]]')
         tput cuu1 && tput dl1
         if [[ -z "$opcion" ]]; then
-                msg -ne " deves ingresar una opcion"
+                msg -ne " debes ingresar una opción"
                 sleep 2
                 return
         elif [[ "$opcion" = "0" ]]; then
@@ -277,14 +286,14 @@ removeV2Ray(){
 
  host(){
          host=$(jq -r '.inbounds[].streamSettings.wsSettings.headers.Host' $config) && [[ $host = null ]] && host='sin host'
-         title "CONFING host V2RAY"
+         title "CONFIG host V2RAY"
         print_center -azu "Actual: $(msg -ama "$host")"
         back
         in_opcion "Nuevo host"
         opcion=$(echo "$opcion" | tr -d '[[:space:]]')
         tput cuu1 && tput dl1
         if [[ -z "$opcion" ]]; then
-                msg -ne " deves ingresar una opcion"
+                msg -ne " debes ingresar una opción"
                 sleep 2
                 return
         elif [[ "$opcion" = "0" ]]; then
@@ -299,14 +308,14 @@ removeV2Ray(){
 
  path(){
          path=$(jq -r '.inbounds[].streamSettings.wsSettings.path' $config) && [[ $path = null ]] && path=''
-         title "CONFING path V2RAY"
+         title "CONFIG path V2RAY"
         print_center -azu "Actual: $(msg -ama "$path")"
         back
         in_opcion "Nuevo path"
         opcion=$(echo "$opcion" | tr -d '[[:space:]]')
         tput cuu1 && tput dl1
         if [[ -z "$opcion" ]]; then
-                msg -ne " deves ingresar una opcion"
+                msg -ne " debes ingresar una opción"
                 sleep 2
                 return
         elif [[ "$opcion" = "0" ]]; then
@@ -321,7 +330,7 @@ removeV2Ray(){
 
  reset(){
          title "RESTAURANDO AJUSTES V2RAY"
-         #resolver imprecion de texto
+         #resolver impresión de texto
          user=$(jq -c '.inbounds[].settings.clients' < $config)
 
          v2ray new
@@ -332,7 +341,7 @@ removeV2Ray(){
     rm $temp
     sleep 2
     if [[ ! -z "$user" ]]; then
-            title "RESATURANDO USUARIOS"
+            title "RESTAURANDO USUARIOS"
             mv $config $temp
             jq --argjson a "$user" '.inbounds[].settings += {"clients":$a}' < $temp > $config
             chmod 777 $config
@@ -341,16 +350,36 @@ removeV2Ray(){
     fi
  }
 
+# ===== MENÚ PRINCIPAL =====
+if ! is_installed; then
+    while :
+    do
+        clear
+        msg -bar
+        print_center -verd "v2ray manager by @Sin_Nombre22"
+        msg -bar
+        msg -ama "INSTALACIÓN"
+        msg -bar3
+        menu_func "$(msg -verd "INSTALAR V2RAY")"
+        back
+        opcion=$(selection_fun 1)
+        case $opcion in
+            1) ins_v2r; break ;;
+            0) exit 0 ;;
+        esac
+    done
+fi
+
 while :
 do
         clear
         msg -bar
         print_center -verd "v2ray manager by @Sin_Nombre22"
         msg -bar
-        msg -ama "INSTALACION"
+        msg -ama "INSTALACIÓN"
         msg -bar3
         menu_func "$(msg -verd "INSTALL/RE-REINSTALL V2RAY")" \
-        "$(msg -verm2 "DESINSTALAR V2RAY")\n$(msg -bar3)\n$(msg -ama "CONFIGRACION")\n$(msg -bar3)" \
+        "$(msg -verm2 "DESINSTALAR V2RAY")\n$(msg -bar3)\n$(msg -ama "CONFIGURACIÓN")\n$(msg -bar3)" \
         "Certif ssl/tls $(msg -ama "(menu nativo)")" \
         "Protocolos $(msg -ama "(menu nativo)")" \
         "puerto" \
@@ -361,7 +390,7 @@ do
         "Path\n$(msg -bar3)\n$(msg -ama "EXTRAS")\n$(msg -bar3)" \
         "Restablecer ajustes"
         back
-        opcion=$(selection_fun 12)
+        opcion=$(selection_fun 11)
         case $opcion in
                 1)ins_v2r;;
                 2)removeV2Ray;;
@@ -378,4 +407,4 @@ do
         esac
         [[ "$?" = "1" ]] && break
 done
-return 1
+exit 1
