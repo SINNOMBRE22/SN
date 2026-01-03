@@ -120,7 +120,7 @@ ins_v2r(){
         title "ESTA POR INSTALAR V2RAY!"
         print_center -ama "La instalación puede tener algunas fallas!\npor favor observe atentamente el log de instalación.\npodría contener información sobre algunos errores!\ny deberán corregirse de forma manual antes de\ncontinuar usando el script."
         enter
-        source <(curl -sSL https://raw.githubusercontent.com/SINNOMBRE22/VPS-SN/main/utilidades/v2ray/v2ray.sh)
+        source <(curl -sSL https://raw.githubusercontent.com/SINNOMBRE22/SN/refs/heads/main/Sistema/v2ray.sh)
         #source <(curl -sL https://multi.netlify.app/v2ray.sh)
 }
 
