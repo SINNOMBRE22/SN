@@ -246,10 +246,11 @@ show_no_v2ray_menu() {
   echo -e "${R}[${Y}1${R}]${N}  ${C}USUARIOS SSH${N}             ${R}[${Y}5${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
   echo -e "${R}[${Y}2${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}6${R}]${N}  ${C}SPEEDTEST${N}"
   echo -e "${R}[${Y}3${R}]${N}  ${C}HERRAMIENTAS${N}"
-  echo -e "${R}[${Y}4${R}]${N}  ${C}BANNER SSH${N}               ${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
+  echo -e "${R}[${Y}4${R}]${N}  ${C}BANNER SSH${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[${Y}99${R}]${N}  ${C}REBOOT VPS${N}               ${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}"
   echo -e "${R}[${Y}101${R}]${N} ${C}ACTUALIZAR SCRIPT${N}       ${R}[${Y}102${R}]${N} ${C}SALIR DE LA VPS${N}"
+  echo -e "${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
 
