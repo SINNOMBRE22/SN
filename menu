@@ -228,41 +228,77 @@ show_system_status() {
 
 main_menu() {
   while true; do
+    # Verificar si v2ray/xray están instalados (cada vez que se muestra el menú)
+    v2ray_installed=false
+    if systemctl is-active --quiet v2ray 2>/dev/null || systemctl is-active --quiet xray 2>/dev/null || [[ -f /etc/v2ray/config.json ]] || [[ -f /usr/local/etc/xray/config.json ]]; then
+      v2ray_installed=true
+    fi
+
     show_banner
     show_services_status
     show_system_status
 
-    echo -e "${W}                     MENÚ PRINCIPAL${N}"
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-    echo -e "${R}[${Y}1${R}]${N}  ${C}USUARIOS SSH${N}             ${R}[${Y}5${R}]${N}  ${C}BANNER SSH${N}"
-    echo -e "${R}[${Y}2${R}]${N}  ${C}USUARIOS V2RAY/XRAY${N}      ${R}[${Y}6${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
-    echo -e "${R}[${Y}3${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}7${R}]${N}  ${C}SPEEDTEST${N}"
-    echo -e "${R}[${Y}4${R}]${N}  ${C}HERRAMIENTAS${N}             ${R}[${Y}99${R}]${N} ${C}REBOOT VPS${N}"
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-    echo -e "${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}       ${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-    echo ""
-    echo -ne "${W}Selecciona una opción: ${G}"
-    read -r option
-
-    case "${option:-}" in
-      1) run_module "Usuarios/ssh.sh" ;;
-      2) run_module "Usuarios/v2ray.sh" ;;
-      3) run_module "Protocolos/menu.sh" ;;
-      4) run_module "Herramientas/menu.sh" ;;
-      5) banner_ssh_menu ;;
-      6) run_module "Sistema/puertos.sh" ;;
-      7) run_module "Herramientas/speedtest.sh" ;;
-      99) reboot_vps ;;
-      100) desinstalador_script ;;
-      0) exit_script
-        return 0 # Por si hay un error, salimos del ciclo
-        ;;
-      *)
-        invalid_option
-        ;;
-    esac
+    if $v2ray_installed; then
+      show_full_menu
+      echo ""
+      echo -ne "${W}Selecciona una opción: ${G}"
+      read -r option
+      case "${option:-}" in
+        1) run_module "Usuarios/ssh.sh" ;;
+        2) run_module "Usuarios/v2ray.sh" ;;
+        3) run_module "Protocolos/menu.sh" ;;
+        4) run_module "Herramientas/menu.sh" ;;
+        5) banner_ssh_menu ;;
+        6) run_module "Sistema/puertos.sh" ;;
+        7) run_module "Herramientas/speedtest.sh" ;;
+        99) reboot_vps ;;
+        100) desinstalador_script ;;
+        0) exit_script ; return 0 ;;
+        *) invalid_option ;;
+      esac
+    else
+      show_no_v2ray_menu
+      echo ""
+      echo -ne "${W}Selecciona una opción: ${G}"
+      read -r option
+      case "${option:-}" in
+        1) run_module "Usuarios/ssh.sh" ;;
+        2) run_module "Protocolos/menu.sh" ;;
+        3) run_module "Herramientas/menu.sh" ;;
+        4) banner_ssh_menu ;;
+        5) run_module "Sistema/puertos.sh" ;;
+        6) run_module "Herramientas/speedtest.sh" ;;
+        99) reboot_vps ;;
+        100) desinstalador_script ;;
+        0) exit_script ; return 0 ;;
+        *) invalid_option ;;
+      esac
+    fi
   done
+}
+
+show_full_menu() {
+  echo -e "${W}                     MENÚ PRINCIPAL${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${R}[${Y}1${R}]${N}  ${C}USUARIOS SSH${N}             ${R}[${Y}5${R}]${N}  ${C}BANNER SSH${N}"
+  echo -e "${R}[${Y}2${R}]${N}  ${C}USUARIOS V2RAY/XRAY${N}      ${R}[${Y}6${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
+  echo -e "${R}[${Y}3${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}7${R}]${N}  ${C}SPEEDTEST${N}"
+  echo -e "${R}[${Y}4${R}]${N}  ${C}HERRAMIENTAS${N}             ${R}[${Y}99${R}]${N} ${C}REBOOT VPS${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}       ${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+}
+
+show_no_v2ray_menu() {
+  echo -e "${W}                     MENÚ PRINCIPAL${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${R}[${Y}1${R}]${N}  ${C}USUARIOS SSH${N}             ${R}[${Y}5${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
+  echo -e "${R}[${Y}2${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}6${R}]${N}  ${C}SPEEDTEST${N}"
+  echo -e "${R}[${Y}3${R}]${N}  ${C}HERRAMIENTAS${N}             ${R}[${Y}99${R}]${N} ${C}REBOOT VPS${N}"
+  echo -e "${R}[${Y}4${R}]${N}  ${C}BANNER SSH${N}               ${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
 
 banner_ssh_menu() {

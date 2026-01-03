@@ -57,7 +57,6 @@ def find_header(head, header):
         return ''
 
 def pick_host(head):
-    # compatible con HTTP Custom
     for h in ('X-Real-Host', 'X-Forward-Host', 'X-Online-Host', 'Host'):
         v = find_header(head, h)
         if v:
@@ -184,3 +183,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+#Fin Del Modulo (este modulo es experimental puede tener fallos
