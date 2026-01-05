@@ -24,6 +24,38 @@ RESET="\e[0m"
 #=====================================================
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ============================
+# Licencia (runtime check)
+# ============================
+LIC_DIR="/etc/.sn"
+LIC_PATH="${LIC_DIR}/lic"
+STATUS_URL="http://74.208.112.115:8888/status"
+
+license_box() {
+  clear
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${Y}${BOLD}LICENCIA NO VÁLIDA / NO ENCONTRADA${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo ""
+  echo -e "${W}Este servidor no está activado.${N}"
+  echo -e "${W}Ejecuta el instalador e ingresa una key válida.${N}"
+  echo ""
+  exit 1
+}
+
+check_license() {
+  # 1) Archivo local debe existir
+  [[ -f "$LIC_PATH" ]] || license_box
+
+  # 2) Chequeo online por IP (autorización real)
+  local resp=""
+  resp="$(curl -fsS --max-time 5 "$STATUS_URL" 2>/dev/null || true)"
+
+  echo "$resp" | grep -q '"authorized"[[:space:]]*:[[:space:]]*true' || license_box
+}
+
+check_license
+#________________________________________
 run_module() {
   local rel="$1"
   local path="${ROOT_DIR}/${rel}"
@@ -233,9 +265,9 @@ show_full_menu() {
   echo -e "${R}[${Y}2${R}]${N}  ${C}USUARIOS V2RAY/XRAY${N}      ${R}[${Y}6${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
   echo -e "${R}[${Y}3${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}7${R}]${N}  ${C}SPEEDTEST${N}"
   echo -e "${R}[${Y}4${R}]${N}  ${C}HERRAMIENTAS${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${R}[${Y}99${R}]${N}  ${C}REBOOT VPS${N}               ${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}"
-  echo -e "${R}[${Y}101${R}]${N} ${C}ACTUALIZAR SCRIPT${N}       ${R}[${Y}102${R}]${N} ${C}SALIR DE LA VPS${N}"
+  echo -e "${R}─────────────────────────── / / / ──────────────────────────${N}"
+  echo -e "${R}[${Y}99${R}]${N}  ${C}REBOOT VPS${N}                ${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}"
+  echo -e "${R}[${Y}101${R}]${N} ${C}ACTUALIZAR SCRIPT${N}         ${R}[${Y}102${R}]${N} ${C}SALIR DE LA VPS${N}"
   echo -e "${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
@@ -247,9 +279,9 @@ show_no_v2ray_menu() {
   echo -e "${R}[${Y}2${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}6${R}]${N}  ${C}SPEEDTEST${N}"
   echo -e "${R}[${Y}3${R}]${N}  ${C}HERRAMIENTAS${N}"
   echo -e "${R}[${Y}4${R}]${N}  ${C}BANNER SSH${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${R}[${Y}99${R}]${N}  ${C}REBOOT VPS${N}               ${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}"
-  echo -e "${R}[${Y}101${R}]${N} ${C}ACTUALIZAR SCRIPT${N}       ${R}[${Y}102${R}]${N} ${C}SALIR DE LA VPS${N}"
+  echo -e "${R}─────────────────────────── / / / ──────────────────────────${N}"
+  echo -e "${R}[${Y}99${R}]${N}  ${C}REBOOT VPS${N}                ${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}"
+  echo -e "${R}[${Y}101${R}]${N} ${C}ACTUALIZAR SCRIPT${N}         ${R}[${Y}102${R}]${N} ${C}SALIR DE LA VPS${N}"
   echo -e "${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
@@ -310,12 +342,7 @@ main_menu() {
 }
 
 banner_ssh_menu() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}                PERSONALIZAR BANNER SSH${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}En desarrollo...${N}"
-  pause
+  run_module "Sistema/banner_ssh.sh"
 }
 
 reboot_vps() {
