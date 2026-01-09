@@ -45,6 +45,14 @@ license_box() {
 }
 
 check_license() {
+
+# BYPASS solo para tu VPS (cambia por tu IP pública real)
+MY_DEV_IP="74.208.112.115"
+MY_IP="$(curl -fsS --max-time 3 ifconfig.me 2>/dev/null || true)"
+
+if [[ "$MY_IP" == "$MY_DEV_IP" ]]; then
+  return 0
+fi
   # 1) Archivo local debe existir
   [[ -f "$LIC_PATH" ]] || license_box
 
