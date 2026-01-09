@@ -28,9 +28,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ============================
 # Licencia (runtime check)
 # ============================
+# ============================
+# Licencia (runtime check) - LOCAL + BYPASS DEV IP
+# ============================
 LIC_DIR="/etc/.sn"
 LIC_PATH="${LIC_DIR}/lic"
-STATUS_URL="http://74.208.112.115:8888/status"
+
+# BYPASS solo para tu VPS (tu IP pública)
+MY_DEV_IP="74.208.112.115"
 
 license_box() {
   clear
@@ -44,26 +49,24 @@ license_box() {
   exit 1
 }
 
+get_public_ip() {
+  # intenta varias fuentes; si falla retorna vacío
+  curl -fsS --max-time 2 https://api.ipify.org 2>/dev/null || true
+}
+
 check_license() {
+  # 0) BYPASS SOLO si detecta IP y coincide EXACTA
+  MY_IP="$(get_public_ip)"
+  if [[ -n "$MY_IP" && "$MY_IP" == "$MY_DEV_IP" ]]; then
+    return 0
+  fi
 
-# BYPASS solo para tu VPS (cambia por tu IP pública real)
-MY_DEV_IP="74.208.112.115"
-MY_IP="$(curl -fsS --max-time 3 ifconfig.me 2>/dev/null || true)"
-
-if [[ "$MY_IP" == "$MY_DEV_IP" ]]; then
-  return 0
-fi
-  # 1) Archivo local debe existir
+  # 1) Licencia local (marca creada por install.sh tras consumir key)
   [[ -f "$LIC_PATH" ]] || license_box
-
-  # 2) Chequeo online por IP (autorización real)
-  local resp=""
-  resp="$(curl -fsS --max-time 5 "$STATUS_URL" 2>/dev/null || true)"
-
-  echo "$resp" | grep -q '"authorized"[[:space:]]*:[[:space:]]*true' || license_box
 }
 
 check_license
+#________________________________________
 #________________________________________
 run_module() {
   local rel="$1"
