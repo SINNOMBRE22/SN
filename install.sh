@@ -203,14 +203,24 @@ install_project() {
   echo -e "${Y}${BOLD}Instalando panel...${N}"
   sn_line
 
-  step "Creando directorio discreto"
-  INSTALL_DIR="/etc/$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8)"
+  step "Creando directorio /etc/SN"
+  INSTALL_DIR="/etc/SN"
   mkdir -p "$INSTALL_DIR" >/dev/null 2>&1
   ok
 
-  step "Clonando repositorio"
+  step "Clonando/actualizando repositorio"
   REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
-  git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1 && ok || fail
+
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    # ya existe: actualiza
+    git -C "$INSTALL_DIR" remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+    git -C "$INSTALL_DIR" fetch --depth 1 origin "$REPO_BRANCH" >/dev/null 2>&1 && ok || fail
+    git -C "$INSTALL_DIR" reset --hard "origin/$REPO_BRANCH" >/dev/null 2>&1 && ok || fail
+  else
+    # no existe: clona limpio
+    rm -rf "$INSTALL_DIR" >/dev/null 2>&1 || true
+    git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1 && ok || fail
+  fi
 
   MENU_PATH="$INSTALL_DIR/menu"
 
