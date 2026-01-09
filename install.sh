@@ -11,9 +11,14 @@ REPO_NAME="SN"
 REPO_BRANCH="main"
 
 # ============================
-# VALIDACIÓN DE KEY
+# VALIDACIÓN DE KEY (FIX)
 # ============================
-VALIDATOR_URL="http://74.208.112.115:8888/validate"
+# Antes: /validate (GET) -> NO existe en validator_api.py
+# Ahora: /consume (POST JSON) -> ES el endpoint real
+VALIDATOR_URL="http://74.208.112.115:8888/consume"
+
+# Ya no se usa porque el validador actual no valida secret
+# (se deja por compatibilidad, pero no se envía)
 VALIDATOR_SECRET="zFBujS1Hjc8M0FgqpuhEd_zWbBQko3VFvQLxPJPBHqc"
 
 # ============================
@@ -130,10 +135,11 @@ ask_and_validate_key() {
 
   step "Validando key"
 
+  # FIX: Tu validador real es POST /consume con JSON {"key": "..."}
   local resp
-  resp="$(curl -fsS -G "$VALIDATOR_URL" \
-    --data-urlencode "key=$key" \
-    -H "X-API-KEY: $VALIDATOR_SECRET" 2>/dev/null || true)"
+  resp="$(curl -fsS -X POST "$VALIDATOR_URL" \
+    -H "Content-Type: application/json" \
+    -d "{\"key\":\"$key\"}" 2>/dev/null || true)"
 
   if echo "$resp" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
     ok
