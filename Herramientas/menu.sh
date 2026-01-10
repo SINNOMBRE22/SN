@@ -198,6 +198,8 @@ main_menu() {
     echo -e "${R}───────────────────────────────────────────────────────────${N}"
     echo -e "${R}[${Y}12${R}]${N} ${C}Gestión de Memoria Swap${N}"
     echo -e "${R}───────────────────────────────────────────────────────────${N}"
+    echo -e "${R}[${Y}13${R}]${N} ${C}Modo Gamer / Acelerador${N}"
+    echo -e "${R}───────────────────────────────────────────────────────────${N}"
     echo -e "${R}[${Y}0${R}]${N}  ${C}VOLVER${N}"
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     echo ""
@@ -217,6 +219,7 @@ main_menu() {
       10) auto_start_script ;;
       11) run_module "ssl.sh" ;;
       12) run_module "swap.sh" ;;
+      13) run_module "gamer.sh" ;;
       0) return 0 ;;
       *)
         invalid_option
