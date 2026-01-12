@@ -154,9 +154,9 @@ v2ray_tls(){
         msg -ne " Continuar [S/N]: " && read opcion_tls
 
         if [[ $opcion_tls = @(S|s) ]]; then
-            cert=$(jq --arg a "${VPS_crt}/$cert" --arg b "${VPS_crt}/$key" '.inbounds[].streamSettings.tlsSettings += {"certificates":[{"certificateFile":$a,"keyFile":$b}]}' < $config)
-            domi=$(echo "$cert"|jq --arg a "$DOMI" '.inbounds[] += {"domain":$a}')
-            echo "$domi"|jq --arg a 'tls' '.inbounds[].streamSettings += {"security":$a}' > $temp
+            cert=$(jq --arg a "${VPS_crt}/$cert" --arg b "${VPS_crt}/$key" '.inbounds[0].streamSettings.tlsSettings += {"certificates":[{"certificateFile":$a,"keyFile":$b}]}' < $config)
+            domi=$(echo "$cert"|jq --arg a "$DOMI" '.inbounds[0] += {"domain":$a}')
+            echo "$domi"|jq --arg a 'tls' '.inbounds[0].streamSettings += {"security":$a}' > $temp
             chmod 777 $temp
             mv -f $temp $config
             restart
@@ -212,7 +212,7 @@ v2ray_stream(){
 }
 
 port(){
-    port=$(jq -r '.inbounds[].port' $config)
+    port=$(jq -r '.inbounds[0].port' $config)
     title "CONFIG PUERTO V2RAY"
     print_center -azu "puerto actual: $(msg -ama "$port")"
     back
@@ -231,14 +231,14 @@ port(){
         return
     fi
     mv $config $temp
-    jq --argjson a "$opcion" '.inbounds[] += {"port":$a}' < $temp >> $config
+    jq --argjson a "$opcion" '.inbounds[0].port = $a' < $temp > $config
     chmod 777 $config
     rm $temp
     restart
 }
 
 alterid(){
-    aid=$(jq -r '.inbounds[].settings.clients[0].alterId' $config)
+    aid=$(jq -r '.inbounds[0].settings.clients[0].alterId' $config)
     title "CONFIG alterId V2RAY"
     print_center -azu "alterid actual: $(msg -ama "$aid")"
     back
@@ -257,7 +257,7 @@ alterid(){
         return
     fi
     mv $config $temp
-    jq --argjson a "$opcion" '.inbounds[].settings.clients[] += {"alterId":$a}' < $temp >> $config
+    jq --argjson a "$opcion" '.inbounds[0].settings.clients[].alterId = $a' < $temp > $config
     chmod 777 $config
     rm $temp
     restart
@@ -270,7 +270,7 @@ n_v2ray(){
 }
 
 address(){
-    add=$(jq -r '.inbounds[].domain' $config) && [[ $add = null ]] && add=$(wget -qO- ipv4.icanhazip.com)
+    add=$(jq -r '.inbounds[0].domain' $config) && [[ $add = null ]] && add=$(wget -qO- ipv4.icanhazip.com)
     title "CONFIG address V2RAY"
     print_center -azu "actual: $(msg -ama "$add")"
     back
@@ -285,14 +285,14 @@ address(){
         return
     fi
     mv $config $temp
-    jq --arg a "$opcion" '.inbounds[] += {"domain":$a}' < $temp >> $config
+    jq --arg a "$opcion" '.inbounds[0].domain = $a' < $temp > $config
     chmod 777 $config
     rm $temp
     restart
 }
 
 host(){
-    host=$(jq -r '.inbounds[].streamSettings.wsSettings.headers.Host' $config) && [[ $host = null ]] && host='sin host'
+    host=$(jq -r '.inbounds[0].streamSettings.wsSettings.headers.Host' $config) && [[ $host = null ]] && host='sin host'
     title "CONFIG host V2RAY"
     print_center -azu "Actual: $(msg -ama "$host")"
     back
@@ -307,14 +307,14 @@ host(){
         return
     fi
     mv $config $temp
-    jq --arg a "$opcion" '.inbounds[].streamSettings.wsSettings.headers += {"Host":$a}' < $temp >> $config
+    jq --arg a "$opcion" '.inbounds[0].streamSettings.wsSettings.headers.Host = $a' < $temp > $config
     chmod 777 $config
     rm $temp
     restart
 }
 
 path(){
-    path=$(jq -r '.inbounds[].streamSettings.wsSettings.path' $config) && [[ $path = null ]] && path=''
+    path=$(jq -r '.inbounds[0].streamSettings.wsSettings.path' $config) && [[ $path = null ]] && path=''
     title "CONFIG path V2RAY"
     print_center -azu "Actual: $(msg -ama "$path")"
     back
@@ -329,7 +329,7 @@ path(){
         return
     fi
     mv $config $temp
-    jq --arg a "$opcion" '.inbounds[].streamSettings.wsSettings += {"path":$a}' < $temp >> $config
+    jq --arg a "$opcion" '.inbounds[0].streamSettings.wsSettings.path = $a' < $temp > $config
     chmod 777 $config
     rm $temp
     restart
@@ -337,18 +337,18 @@ path(){
 
 reset(){
     title "RESTAURANDO AJUSTES V2RAY"
-    user=$(jq -c '.inbounds[].settings.clients' < $config)
+    user=$(jq -c '.inbounds[0].settings.clients' < $config)
     v2ray new
-    jq 'del(.inbounds[].streamSettings.kcpSettings[])' < $config > $temp
+    jq 'del(.inbounds[0].streamSettings.kcpSettings[])' < $config > $temp
     rm $config
-    jq '.inbounds[].streamSettings += {"network":"ws","wsSettings":{"path": "/VPS-SN/","headers": {"Host": "ejemplo.com"}}}' < $temp > $config
+    jq '.inbounds[0].streamSettings += {"network":"ws","wsSettings":{"path": "/VPS-SN/","headers": {"Host": "ejemplo.com"}}}' < $temp > $config
     chmod 777 $config
     rm $temp
     sleep 2
     if [[ ! -z "$user" ]]; then
         title "RESTAURANDO USUARIOS"
         mv $config $temp
-        jq --argjson a "$user" '.inbounds[].settings += {clients:$a}' < $temp > $config
+        jq --argjson a "$user" '.inbounds[0].settings += {clients:$a}' < $temp > $config
         chmod 777 $config
         sleep 2
         restart
