@@ -73,6 +73,7 @@ check_filebrowser_status() { ( is_active_systemd filebrowser || pgrep -f 'filebr
 check_checkuser_status() { ( is_active_systemd checkuser || pgrep -f 'checkuser' >/dev/null 2>&1 ) && echo "true" || echo "false"; }
 check_atken_status() { pgrep -f 'atken|aToken|hash' >/dev/null 2>&1 && echo "true" || echo "false"; }
 check_sshgo_status() { pgrep -x sshgo >/dev/null 2>&1 && echo "true" || echo "false"; }
+check_psiphon_status() { screen -list | grep -q psiserver && echo "true" || echo "false"; }
 
 # =========================================================
 # UI FIJA AL CUADRO (58 chars visibles)
@@ -99,7 +100,7 @@ main_menu_single() {
     clear
 
     local ssh_st dropbear_st stunnel_st squid_st socks_st ws_st slowdns_st v2_st
-    local udp_st hyst_st badvpn_st ovpn_st wg_st fb_st cu_st at_st sshgo_st
+    local udp_st hyst_st badvpn_st ovpn_st wg_st fb_st cu_st at_st sshgo_st psiphon_st
 
     ssh_st="$(status_badge "$(check_ssh_status)")"
     dropbear_st="$(status_badge "$(check_dropbear_status)")"
@@ -118,6 +119,7 @@ main_menu_single() {
     cu_st="$(status_badge "$(check_checkuser_status)")"
     at_st="$(status_badge "$(check_atken_status)")"
     sshgo_st="$(status_badge "$(check_sshgo_status)")"
+    psiphon_st="$(status_badge "$(check_psiphon_status)")"
 
     title_box "INSTALADORES"
     echo ""
@@ -139,6 +141,7 @@ main_menu_single() {
     print_item_list "15" "CHECKUSER"     "$cu_st"
     print_item_list "16" "ATKEN / HASH"  "$at_st"
     print_item_list "17" "SSHGO"         "$sshgo_st"
+    print_item_list "18" "PSIPHON"       "$psiphon_st"
 
     echo ""
     hr
@@ -167,6 +170,7 @@ main_menu_single() {
       15) run_proto "Protocolos/checkuser.sh" ;;
       16) run_proto "Protocolos/atken.sh" ;;
       17) run_proto "Protocolos/sshgo.sh" ;;
+      18) run_proto "Protocolos/psiphon.sh" ;;
       0)  break ;;
       *)  echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac

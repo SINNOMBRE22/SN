@@ -13,7 +13,8 @@ AUTHOR="SinNombre"
 RED="\033[1;31m"
 GREEN="\033[1;32m"
 YELLOW="\033[1;33m"
-BLUE="\033[1;34m"
+BLUE="\033[0;34m"
+CYAN="\033[0;36m"
 NC="\033[0m"
 
 # Función para verificar dependencias
@@ -25,6 +26,10 @@ check_dependencies() {
     if ! command -v jq &> /dev/null; then
         echo -e "${RED}Error: jq no está instalado. Instalando...${NC}"
         apt update -y && apt install jq -y
+    fi
+    if ! command -v xxd &> /dev/null; then
+        echo -e "${RED}Error: xxd no está instalado. Instalando...${NC}"
+        apt update -y && apt install xxd -y
     fi
 }
 
@@ -71,22 +76,44 @@ install_psiphon() {
     echo -e "${YELLOW}   INSTALANDO PSIPHON - ${AUTHOR}${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
+    if screen -list | grep -q $SCREEN_NAME; then
+        echo -e "${RED}Psiphon ya está ejecutándose. Desinstálalo primero.${NC}"
+        read -p "ENTER para continuar..."
+        return
+    fi
+
     check_dependencies
     ufw disable >/dev/null 2>&1
-    apt update -y
-    apt install screen jq -y
 
     select_protocol
     select_port
 
     cd $PSI_DIR || exit
-    wget -q https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/psiphond/psiphond
+
+    # Detectar arquitectura y URL del binario
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "x86_64" ]; then
+        BINARY_URL="https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/psiphond/psiphond"
+    elif [ "$ARCH" = "aarch64" ]; then
+        BINARY_URL="https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/psiphond/psiphond-arm"
+    else
+        echo -e "${RED}Arquitectura $ARCH no soportada.${NC}"
+        read -p "ENTER para continuar..."
+        return
+    fi
+
+    echo -e "${YELLOW}Descargando binario de Psiphon...${NC}"
+    if ! wget -q $BINARY_URL -O psiphond; then
+        echo -e "${RED}Error al descargar el binario. Verifica la conexión a internet o la URL.${NC}"
+        read -p "ENTER para continuar..."
+        return
+    fi
     chmod +x psiphond
 
-    ./psiphond --ipaddress 0.0.0.0 --protocol $PROTOCOL:$PORT generate
+    ./psiphond generate --ipaddress 0.0.0.0 --protocol $PROTOCOL:$PORT
 
     chmod 666 *.config server-entry.dat
-    screen -dmS $SCREEN_NAME ./psiphond run
+    screen -dmS $SCREEN_NAME ./psiphond run --config psiphond.config
 
     echo -e "${GREEN}✔ PSIPHON INSTALADO Y EJECUTANDO (Protocolo: $PROTOCOL, Puerto: $PORT)${NC}"
     echo
@@ -126,10 +153,10 @@ restart_psiphon() {
     if screen -list | grep -q $SCREEN_NAME; then
         screen -X -S $SCREEN_NAME quit
         echo -e "${YELLOW}Reiniciando Psiphon...${NC}"
-        screen -dmS $SCREEN_NAME $PSI_BIN run
+        screen -dmS $SCREEN_NAME $PSI_BIN run --config psiphond.config
         echo -e "${GREEN}✔ PSIPHON REINICIADO${NC}"
     else
-        echo -e "${RED}Psiphon no está ejecutándose.${NC}"
+        echo -e "${RED}Psiphon no está ejecutándose. Instálalo primero.${NC}"
     fi
     sleep 2
 }
@@ -159,33 +186,51 @@ uninstall_psiphon() {
     sleep 2
 }
 
-menu() {
+show_menu() {
     clear
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}          MENU PSIPHON - ${AUTHOR}${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e " ${GREEN}1${NC}) Instalar Psiphon"
-    echo -e " ${GREEN}2${NC}) Mostrar código HEX"
-    echo -e " ${GREEN}3${NC}) Mostrar código JSON"
-    echo -e " ${GREEN}4${NC}) Verificar estado"
-    echo -e " ${GREEN}5${NC}) Reiniciar Psiphon"
-    echo -e " ${GREEN}6${NC}) Desinstalar Psiphon"
-    echo -e " ${GREEN}7${NC}) Salir"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━��━━━━━━━━━━━━━━${NC}"
+    echo -e "\E[41;1;37m                MENU PSIPHON                 \E[0m"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "[\033[1;36m 1:\033[1;31m] \033[1;37m• \033[1;33mINSTALAR PSIPHON\033[1;31m"
+    echo -e "[\033[1;36m 2:\033[1;31m] \033[1;37m• \033[1;33mMOSTRAR CÓDIGO PSIPHON EN FORMATO HEXADECIMAL\033[1;31m"
+    echo -e "[\033[1;36m 3:\033[1;31m] \033[1;37m• \033[1;33mMOSTRAR CÓDIGO PSIPHON EN FORMATO JSON\033[1;31m"
+    echo -e "[\033[1;36m 4:\033[1;31m] \033[1;37m• \033[1;33mVERIFICAR ESTADO\033[1;31m"
+    echo -e "[\033[1;36m 5:\033[1;31m] \033[1;37m• \033[1;33mREINICIAR PSIPHON\033[1;31m"
+    echo -e "[\033[1;36m 6:\033[1;31m] \033[1;37m• \033[1;33mDESINSTALAR PSIPHON\033[1;31m"
+    echo -e "[\033[1;36m 7:\033[1;31m] \033[1;37m• \033[1;33mSALIR\033[1;31m"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo
-    read -p "Seleccione una opción: " opt
 }
 
 while true; do
-    menu
-    case $opt in
-        1) install_psiphon ;;
-        2) show_hex ;;
-        3) show_json ;;
-        4) check_status ;;
-        5) restart_psiphon ;;
-        6) uninstall_psiphon ;;
-        7) exit 0 ;;
-        *) echo "Opción inválida"; sleep 1 ;;
+    show_menu
+    read -p "SELECCIONE UNA OPCIÓN: " opcion
+
+    case $opcion in
+        1)
+            install_psiphon
+            ;;
+        2)
+            show_hex
+            ;;
+        3)
+            show_json
+            ;;
+        4)
+            check_status
+            ;;
+        5)
+            restart_psiphon
+            ;;
+        6)
+            uninstall_psiphon
+            ;;
+        7)
+            echo -e "\033[1;33mSALIENDO...\033[0m"
+            exit 0
+            ;;
+        *)
+            echo "Opción no válida. Por favor, intenta de nuevo."
+            ;;
     esac
 done
