@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # =========================================================
-# SinNombre - Installer Profesional + Licencia + Banner (FIX)
+# SinNombre - Installer Profesional + Licencia + Banner
+# VALIDATOR FIXED (usa el que SÍ funciona)
 # =========================================================
 
 REPO_OWNER="SINNOMBRE22"
@@ -13,7 +14,6 @@ VALIDATOR_URL="http://74.208.112.115:8888/consume"
 
 LIC_DIR="/etc/.sn"
 LIC_PATH="$LIC_DIR/lic"
-ACTIVATED="$LIC_DIR/.activated"
 INSTALL_DIR="/etc/SN"
 
 # ============================
@@ -27,8 +27,9 @@ line() {
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
 
-step() { echo -e " ${C}•${N} ${W}$1${N}"; }
-ok()   { echo -e "   ${G}[OK]${N}"; }
+step() { printf " ${C}•${N} ${W}%s${N} " "$1"; }
+ok()   { echo -e "${G}[OK]${N}"; }
+fail() { echo -e "${R}[FAIL]${N}"; }
 
 # ============================
 # ROOT
@@ -42,7 +43,7 @@ ok()   { echo -e "   ${G}[OK]${N}"; }
 }
 
 # ============================
-# DEPENDENCIAS
+# DEPENDENCIAS (VISIBLE)
 # ============================
 install_deps() {
   clear
@@ -51,35 +52,45 @@ install_deps() {
   line
 
   step "Actualizando repositorios"
-  apt-get update
-  ok
+  apt-get update && ok
 
-  step "Instalando paquetes base"
-  apt-get install -y curl git sudo ca-certificates \
-    zip unzip ufw iptables socat netcat-openbsd net-tools \
-    python3 python3-pip openssl screen cron lsof nano at \
-    jq bc gawk nodejs npm toilet figlet cowsay lolcat
-  ok
+  step "Herramientas base"
+  apt-get install -y curl git sudo ca-certificates && ok
+
+  step "Compresión"
+  apt-get install -y zip unzip && ok
+
+  step "Redes"
+  apt-get install -y ufw iptables socat netcat-openbsd net-tools && ok
+
+  step "Python"
+  apt-get install -y python3 python3-pip openssl && ok
+
+  step "Utilidades"
+  apt-get install -y screen cron lsof nano at mlocate && ok
+
+  step "Procesamiento"
+  apt-get install -y jq bc gawk grep && ok
+
+  step "Node.js"
+  apt-get install -y nodejs npm && ok
+
+  step "Banners"
+  apt-get install -y toilet figlet cowsay lolcat && ok
 }
 
 # ============================
-# LICENCIA (FIX REAL)
+# KEY / LICENCIA (VALIDADOR BUENO)
 # ============================
 validate_key() {
   mkdir -p "$LIC_DIR"
   chmod 700 "$LIC_DIR"
 
-  # Ya activado alguna vez → NO volver a consumir key
-  if [[ -f "$ACTIVATED" ]]; then
-    echo -e "${G}Licencia ya activada anteriormente${N}"
-
-    # Si borraron lic, se restaura
-    if [[ ! -f "$LIC_PATH" ]]; then
-      echo "restored=$(date)" > "$LIC_PATH"
-      chmod 600 "$LIC_PATH"
-    fi
+  # Si ya existe licencia, NO volver a consumir key
+  if [[ -f "$LIC_PATH" ]]; then
+    echo -e "${G}Licencia ya activada. Continuando...${N}"
     sleep 1
-    return
+    return 0
   fi
 
   clear
@@ -88,7 +99,7 @@ validate_key() {
   line
 
   read -rp "KEY: " KEY
-  KEY="$(echo "$KEY" | tr -d ' ')"
+  KEY="$(echo -n "$KEY" | tr -d ' \r\n')"
 
   [[ "$KEY" == SN-* ]] || {
     echo -e "${R}Formato inválido${N}"
@@ -96,24 +107,24 @@ validate_key() {
   }
 
   step "Validando key"
-  RESP=$(curl -s -X POST "$VALIDATOR_URL" \
-    -H "Content-Type: application/json" \
-    -d "{\"key\":\"$KEY\"}")
 
-  echo "$RESP" | grep -q '"ok":true' || {
+  RESP="$(curl -fsS -X POST "$VALIDATOR_URL" \
+    -H "Content-Type: application/json" \
+    -d "{\"key\":\"$KEY\"}" || true)"
+
+  echo "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
     echo -e "${R}Key inválida o usada${N}"
     exit 1
   }
 
-  echo "activated=$(date)" > "$ACTIVATED"
-  echo "$KEY" > "$LIC_PATH"
-  chmod 600 "$ACTIVATED" "$LIC_PATH"
+  echo "activated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$LIC_PATH"
+  chmod 600 "$LIC_PATH"
 
   ok
 }
 
 # ============================
-# PANEL
+# INSTALAR PANEL
 # ============================
 install_panel() {
   clear
@@ -124,20 +135,22 @@ install_panel() {
   step "Clonando repositorio"
   rm -rf "$INSTALL_DIR"
   git clone --depth 1 -b "$REPO_BRANCH" \
-    "https://github.com/$REPO_OWNER/$REPO_NAME.git" "$INSTALL_DIR"
+    "https://github.com/$REPO_OWNER/$REPO_NAME.git" \
+    "$INSTALL_DIR"
   ok
 
-  step "Permisos"
+  step "Asignando permisos"
   chmod +x "$INSTALL_DIR/menu"
   find "$INSTALL_DIR" -name "*.sh" -exec chmod +x {} \;
   ok
 
-  step "Comando global"
+  step "Creando comandos globales"
+
   cat > /usr/local/bin/sn <<EOF
 #!/usr/bin/env bash
-[[ \$(id -u) -eq 0 ]] || exit 1
-[[ -f "$LIC_PATH" ]] || { echo "Licencia no encontrada"; exit 1; }
-exec "$INSTALL_DIR/menu" "\$@"
+[[ \$(id -u) -eq 0 ]] || { echo "Usa sudo"; exit 1; }
+[[ -f $LIC_PATH ]] || { echo "Licencia no encontrada"; exit 1; }
+exec $INSTALL_DIR/menu "\$@"
 EOF
 
   chmod +x /usr/local/bin/sn
@@ -146,24 +159,32 @@ EOF
 }
 
 # ============================
-# BANNER
+# BANNER DE BIENVENIDA (ORIGINAL)
 # ============================
 install_banner() {
   step "Instalando banner de bienvenida"
 
   touch /root/.hushlogin
+  chmod 600 /root/.hushlogin
 
   grep -q "SinNombre - Welcome banner" /root/.bashrc 2>/dev/null || cat >> /root/.bashrc <<'EOF'
 
-# === SinNombre - Welcome banner ===
+# ============================
+# SinNombre - Welcome banner
+# ============================
 if [[ $- == *i* ]]; then
+  [[ -n "${SN_WELCOME_SHOWN:-}" ]] && return
+  export SN_WELCOME_SHOWN=1
+
   clear
-  if command -v toilet >/dev/null; then
-    toilet -f slant -F metal "SinNombre"
+
+  if command -v toilet >/dev/null 2>&1; then
+    toilet -f slant -F metal "SinNombre" 2>/dev/null || true
   else
     echo "SinNombre"
   fi
-  echo "Comando: menu | sn"
+  echo "Comandos: menu | sn"
+  echo ""
 fi
 EOF
 
@@ -173,12 +194,19 @@ EOF
 # ============================
 # FIN
 # ============================
+finish() {
+  line
+  echo -e "${G}${BOLD}INSTALACIÓN COMPLETA${N}"
+  line
+  echo -e "${W}Usa:${N} ${C}menu${N}"
+  echo -e "${W}Licencia:${N} ${C}${LIC_PATH}${N}"
+}
+
+# ============================
+# EJECUCIÓN
+# ============================
 install_deps
 validate_key
 install_panel
 install_banner
-
-line
-echo -e "${G}${BOLD}INSTALACIÓN COMPLETA${N}"
-line
-echo -e "${W}Reinicia la vps Con reboot${N}"
+finish
