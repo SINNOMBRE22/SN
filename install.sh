@@ -97,7 +97,26 @@ install_deps() {
 # ============================
 # KEY / LICENCIA
 # ============================
+# ============================
+# KEY / LICENCIA (FIXED)
+# ============================
 validate_key() {
+  mkdir -p "$LIC_DIR"
+  chmod 700 "$LIC_DIR"
+
+  # Si ya fue activado alguna vez, no volver a consumir key
+  if [[ -f "$LIC_DIR/activated" ]]; then
+    echo -e "${G}Sistema ya activado previamente. Continuando...${N}"
+
+    # Si borraron el lic, lo restauramos
+    if [[ ! -f "$LIC_PATH" ]]; then
+      echo "restored=$(date)" > "$LIC_PATH"
+      chmod 600 "$LIC_PATH"
+    fi
+    sleep 1
+    return 0
+  fi
+
   clear
   line
   echo -e "${Y}${BOLD}ACTIVACIÓN DE LICENCIA${N}"
@@ -121,8 +140,12 @@ validate_key() {
     exit 1
   }
 
-  mkdir -p "$LIC_DIR"
-  echo "activated=$(date)" > "$LIC_PATH"
+  # Marca permanente (NO BORRAR)
+  echo "activated=$(date)" > "$LIC_DIR/activated"
+  chmod 600 "$LIC_DIR/activated"
+
+  # Licencia de uso
+  echo "active=$(date)" > "$LIC_PATH"
   chmod 600 "$LIC_PATH"
 
   ok
