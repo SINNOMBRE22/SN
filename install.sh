@@ -167,21 +167,52 @@ EOF
 # BANNER DE BIENVENIDA
 # ============================
 install_banner() {
-  step "Configurando banner de bienvenida"
+  step "Instalando banner de bienvenida"
 
-  cat >> /root/.bashrc <<'EOF'
+  # Silenciar mensajes del sistema
+  touch /root/.hushlogin
+  chmod 600 /root/.hushlogin
 
-# ==== SinNombre Welcome ====
+  # Banner en bashrc
+  grep -q "SinNombre - Welcome banner" /root/.bashrc 2>/dev/null || cat >> /root/.bashrc <<'EOF'
+
+# ============================
+# SinNombre - Welcome banner
+# ============================
 if [[ $- == *i* ]]; then
+  [[ -n "${SN_WELCOME_SHOWN:-}" ]] && return
+  export SN_WELCOME_SHOWN=1
+
   clear
-  if command -v toilet >/dev/null; then
-    toilet -f slant -F metal "SinNombre"
-  else
-    echo "SinNombre"
-  fi
-  echo "Creador: @SIN_NOMBRE22"
-  echo "Comando: menu | sn"
+
+  R='\033[0;31m'
+  G='\033[0;32m'
+  Y='\033[1;33m'
+  C='\033[0;36m'
+  W='\033[1;37m'
+  N='\033[0m'
+  BOLD='\033[1m'
+
   echo ""
+  if command -v toilet >/dev/null 2>&1; then
+    toilet -f slant -F metal "SinNombre" 2>/dev/null || true
+  else
+    echo -e "${C}${BOLD}SinNombre${N}"
+  fi
+  echo -e "${W}Creador:${N} ${C}@SIN_NOMBRE22${N}"
+  echo -e "${W}Comandos:${N} ${G}menu${N} ${W}o${N} ${G}sn${N}"
+  echo ""
+fi
+EOF
+
+  # Asegurar carga desde profile (SSH)
+  grep -q "SinNombre - Welcome banner" /root/.profile 2>/dev/null || cat >> /root/.profile <<'EOF'
+
+# ============================
+# SinNombre - Welcome banner
+# ============================
+if [ -n "$BASH_VERSION" ]; then
+  [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
 fi
 EOF
 
