@@ -149,7 +149,7 @@ main_menu_single() {
     hr
     echo ""
     echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
-    echo -ne "​└─> : ${G}"
+    echo -ne "╰─> : ${G}"
     read -r op
 
     case "${op:-}" in
