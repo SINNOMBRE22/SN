@@ -2,7 +2,7 @@
 set -e
 
 # =========================================================
-# SinNombre - Installer Profesional + Licencia + Banner
+# SinNombre - Installer Profesional + Licencia + Banner (FIX)
 # =========================================================
 
 REPO_OWNER="SINNOMBRE22"
@@ -13,6 +13,7 @@ VALIDATOR_URL="http://74.208.112.115:8888/consume"
 
 LIC_DIR="/etc/.sn"
 LIC_PATH="$LIC_DIR/lic"
+ACTIVATED="$LIC_DIR/.activated"
 INSTALL_DIR="/etc/SN"
 
 # ============================
@@ -41,7 +42,7 @@ ok()   { echo -e "   ${G}[OK]${N}"; }
 }
 
 # ============================
-# DEPENDENCIAS (VISIBLE)
+# DEPENDENCIAS
 # ============================
 install_deps() {
   clear
@@ -53,68 +54,32 @@ install_deps() {
   apt-get update
   ok
 
-  echo ""
-  step "Herramientas base"
-  apt-get install -y curl git sudo ca-certificates
-  ok
-
-  echo ""
-  step "Compresión"
-  apt-get install -y zip unzip
-  ok
-
-  echo ""
-  step "Redes"
-  apt-get install -y ufw iptables socat netcat-openbsd net-tools
-  ok
-
-  echo ""
-  step "Python"
-  apt-get install -y python3 python3-pip openssl
-  ok
-
-  echo ""
-  step "Utilidades del sistema"
-  apt-get install -y screen cron lsof nano at mlocate
-  ok
-
-  echo ""
-  step "Procesamiento de datos"
-  apt-get install -y jq bc gawk grep
-  ok
-
-  echo ""
-  step "Node.js"
-  apt-get install -y nodejs npm
-  ok
-
-  echo ""
-  step "Banners y decoración"
-  apt-get install -y toilet figlet cowsay lolcat
+  step "Instalando paquetes base"
+  apt-get install -y curl git sudo ca-certificates \
+    zip unzip ufw iptables socat netcat-openbsd net-tools \
+    python3 python3-pip openssl screen cron lsof nano at \
+    jq bc gawk nodejs npm toilet figlet cowsay lolcat
   ok
 }
 
 # ============================
-# KEY / LICENCIA
-# ============================
-# ============================
-# KEY / LICENCIA (FIXED)
+# LICENCIA (FIX REAL)
 # ============================
 validate_key() {
   mkdir -p "$LIC_DIR"
   chmod 700 "$LIC_DIR"
 
-  # Si ya fue activado alguna vez, no volver a consumir key
-  if [[ -f "$LIC_DIR/activated" ]]; then
-    echo -e "${G}Sistema ya activado previamente. Continuando...${N}"
+  # Ya activado alguna vez → NO volver a consumir key
+  if [[ -f "$ACTIVATED" ]]; then
+    echo -e "${G}Licencia ya activada anteriormente${N}"
 
-    # Si borraron el lic, lo restauramos
+    # Si borraron lic, se restaura
     if [[ ! -f "$LIC_PATH" ]]; then
       echo "restored=$(date)" > "$LIC_PATH"
       chmod 600 "$LIC_PATH"
     fi
     sleep 1
-    return 0
+    return
   fi
 
   clear
@@ -140,19 +105,15 @@ validate_key() {
     exit 1
   }
 
-  # Marca permanente (NO BORRAR)
-  echo "activated=$(date)" > "$LIC_DIR/activated"
-  chmod 600 "$LIC_DIR/activated"
-
-  # Licencia de uso
-  echo "active=$(date)" > "$LIC_PATH"
-  chmod 600 "$LIC_PATH"
+  echo "activated=$(date)" > "$ACTIVATED"
+  echo "$KEY" > "$LIC_PATH"
+  chmod 600 "$ACTIVATED" "$LIC_PATH"
 
   ok
 }
 
 # ============================
-# INSTALAR PANEL
+# PANEL
 # ============================
 install_panel() {
   clear
@@ -163,22 +124,20 @@ install_panel() {
   step "Clonando repositorio"
   rm -rf "$INSTALL_DIR"
   git clone --depth 1 -b "$REPO_BRANCH" \
-    "https://github.com/$REPO_OWNER/$REPO_NAME.git" \
-    "$INSTALL_DIR"
+    "https://github.com/$REPO_OWNER/$REPO_NAME.git" "$INSTALL_DIR"
   ok
 
-  step "Asignando permisos"
+  step "Permisos"
   chmod +x "$INSTALL_DIR/menu"
   find "$INSTALL_DIR" -name "*.sh" -exec chmod +x {} \;
   ok
 
-  step "Creando comandos globales"
-
+  step "Comando global"
   cat > /usr/local/bin/sn <<EOF
 #!/usr/bin/env bash
 [[ \$(id -u) -eq 0 ]] || exit 1
-[[ -f $LIC_PATH ]] || { echo "Licencia no encontrada"; exit 1; }
-exec $INSTALL_DIR/menu "\$@"
+[[ -f "$LIC_PATH" ]] || { echo "Licencia no encontrada"; exit 1; }
+exec "$INSTALL_DIR/menu" "\$@"
 EOF
 
   chmod +x /usr/local/bin/sn
@@ -187,55 +146,24 @@ EOF
 }
 
 # ============================
-# BANNER DE BIENVENIDA
+# BANNER
 # ============================
 install_banner() {
   step "Instalando banner de bienvenida"
 
-  # Silenciar mensajes del sistema
   touch /root/.hushlogin
-  chmod 600 /root/.hushlogin
 
-  # Banner en bashrc
   grep -q "SinNombre - Welcome banner" /root/.bashrc 2>/dev/null || cat >> /root/.bashrc <<'EOF'
 
-# ============================
-# SinNombre - Welcome banner
-# ============================
+# === SinNombre - Welcome banner ===
 if [[ $- == *i* ]]; then
-  [[ -n "${SN_WELCOME_SHOWN:-}" ]] && return
-  export SN_WELCOME_SHOWN=1
-
   clear
-
-  R='\033[0;31m'
-  G='\033[0;32m'
-  Y='\033[1;33m'
-  C='\033[0;36m'
-  W='\033[1;37m'
-  N='\033[0m'
-  BOLD='\033[1m'
-
-  echo ""
-  if command -v toilet >/dev/null 2>&1; then
-    toilet -f slant -F metal "SinNombre" 2>/dev/null || true
+  if command -v toilet >/dev/null; then
+    toilet -f slant -F metal "SinNombre"
   else
-    echo -e "${C}${BOLD}SinNombre${N}"
+    echo "SinNombre"
   fi
-  echo -e "${W}Creador:${N} ${C}@SIN_NOMBRE22${N}"
-  echo -e "${W}Comandos:${N} ${G}menu${N} ${W}o${N} ${G}sn${N}"
-  echo ""
-fi
-EOF
-
-  # Asegurar carga desde profile (SSH)
-  grep -q "SinNombre - Welcome banner" /root/.profile 2>/dev/null || cat >> /root/.profile <<'EOF'
-
-# ============================
-# SinNombre - Welcome banner
-# ============================
-if [ -n "$BASH_VERSION" ]; then
-  [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+  echo "Comando: menu | sn"
 fi
 EOF
 
@@ -245,19 +173,12 @@ EOF
 # ============================
 # FIN
 # ============================
-finish() {
-  line
-  echo -e "${G}${BOLD}INSTALACIÓN COMPLETA${N}"
-  line
-  echo -e "${W}Usa:${N} ${C}menu${N}"
-  echo -e "${W}Reconecta SSH para ver el banner${N}"
-}
-
-# ============================
-# EJECUCIÓN
-# ============================
 install_deps
 validate_key
 install_panel
 install_banner
-finish
+
+line
+echo -e "${G}${BOLD}INSTALACIÓN COMPLETA${N}"
+line
+echo -e "${W}Reinicia la vps Con reboot${N}"
