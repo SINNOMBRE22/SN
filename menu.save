@@ -173,7 +173,6 @@ get_proc_pid_by_port() {
   local port="$1"
   local line proc pid
   line="$(
-    ss -H -lntup 2>/dev/null \
     | awk -v re=":${port}\$" '$5 ~ re {print; exit}' \
     || true
   )"
@@ -317,7 +316,7 @@ main_menu() {
       show_full_menu
       echo ""
       echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
-      echo -ne "╰─> : ${G}"
+      echo -ne "​└─> : ${G}"
       read -r op
       case "${op:-}" in
         1) run_module "Usuarios/ssh.sh" ;;
@@ -338,7 +337,7 @@ main_menu() {
       show_no_v2ray_menu
       echo ""
       echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
-      echo -ne "╰─> : ${G}"
+      echo -ne "​└─> : ${G}"
       read -r op
       case "${op:-}" in
         1) run_module "Usuarios/ssh.sh" ;;
