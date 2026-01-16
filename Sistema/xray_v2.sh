@@ -6,6 +6,48 @@ BEGIN_PATH=$(pwd)
 [[ -f /etc/redhat-release && -z $(echo $SHELL|grep zsh) ]] && unalias -a
 [[ -z $(echo $SHELL|grep zsh) ]] && ENV_FILE=".bashrc" || ENV_FILE=".zshrc"
 
+# ===== COLORES =====
+R='\033[0;31m'
+G='\033[0;32m'
+Y='\033[1;33m'
+B='\033[0;34m'
+C='\033[0;36m'
+W='\033[1;37m'
+N='\033[0m'
+
+# ===== MENSAJES =====
+msg() {
+  case "$1" in
+    -bar)   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}" ;;
+    -bar3)  echo -e "${R}──────────────────────────────────────────${N}" ;;
+    -verd)  echo -e "${G}$2${N}" ;;
+    -verm|-verm2) echo -e "${R}$2${N}" ;;
+    -ama)   echo -e "${Y}$2${N}" ;;
+    -azu)   echo -e "${C}$2${N}" ;;
+    -ne)    echo -ne "$2" ;;
+    -nazu)  echo -ne "${C}$2${N}" ;;
+    *)      echo -e "$*" ;;
+  esac
+}
+
+# ===== TITULO =====
+title() {
+  clear
+  msg -bar
+  echo -e "${W} $* ${N}"
+  msg -bar
+}
+
+# ===== TEXTO =====
+print_center() {
+  msg "$1" "$2"
+}
+
+# ===== ENTER =====
+enter() {
+  read -p " Presione ENTER para continuar"
+}
+
 dependencias(){
         soft="socat cron bash-completion ntpdate gawk jq uuid-runtime python-pip python3 python3-pip"
 
@@ -103,7 +145,7 @@ profileInit(){
         "clients": [
           {
             "id": "$(uuidgen)",
-            "flow": "xtls-rprx-vision",
+            "flow": "xtls-rprx-vision"
           }
         ],
         "decryption": "none"
@@ -162,4 +204,3 @@ main(){
 }
 
 main
-
