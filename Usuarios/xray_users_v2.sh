@@ -58,6 +58,10 @@ title() {
   msg -bar
 }
 
+# ===== COL2 =====
+col2(){
+    msg -ne "$1" && msg -ama " $2"
+}
 # ===== TEXTO =====
 print_center() {
   msg "$1" "$2"
@@ -195,8 +199,12 @@ vless(){
     [[ ! $host = '' ]] && col2 "Host/SNI:" "$host"
     [[ ! $path = '' ]] && col2 "Path:" "$path"
     msg -bar
-    var="{\"v\":\"2\",\"ps\":\"$ps\",\"add\":\"$add\",\"port\":$port,\"id\":\"$id\",\"flow\":\"$flow\",\"type\":\"\",\"net\":\"$net\",\"path\":\"$path\",\"host\":\"$host\",\"tls\":\"$security\"}"
-    msg -ama "vless://$(echo "$var"|jq -r '.|@base64')"
+
+    params="type=$net&security=$security&flow=$flow"
+    [[ ! $path = '' ]] && params="$params&path=$path"
+    [[ ! $host = '' ]] && params="$params&host=$host"
+    link="vless://$id@$add:$port?$params#$ps"
+    msg -ama "$link"
     msg -bar
     read foo
 }
@@ -245,7 +253,7 @@ newuser(){
     dias=$(date '+%y-%m-%d' -d " +$opcion days")
     uuid=$(uuidgen)
     flow="xtls-rprx-vision"
-    var="{\"flow\":\"$flow\",\"id\":\"$uuid\",\"email\":\"$email\",\"date\":\"$dias\"}"
+    var="{\"flow\":\"$flow\",\"id\":\"$uuid\",\"email\":\"$email\",\"date\":\"$dias\",\"encryption\":\"none\"}"
 
     mv $config $temp
     jq --argjson a "$users" --argjson b "$var" '.inbounds[0].settings.clients[$a] += $b' < $temp > $config

@@ -142,25 +142,62 @@ ins_xray(){
 }
 
 xray_tls(){
-    db="$(ls ${VPS_crt})"
+    db="$(ls ${VPS_crt} 2>/dev/null)"
     if [[ ! "$(echo "$db"|grep '.crt')" = "" ]]; then
         cert=$(echo "$db"|grep '.crt')
         key=$(echo "$db"|grep '.key')
-        DOMI=$(cat "${VPS_src}/dominio.txt")
+        DOMI=$(cat "${VPS_src}/dominio.txt" 2>/dev/null)
+        if [[ -z "$DOMI" ]]; then
+            msg -verm2 "Dominio no encontrado en ${VPS_src}/dominio.txt"
+            enter
+            return
+        fi
+        
+        # Verificar archivos antes de continuar
+        if [[ ! -f "${VPS_crt}/$cert" || ! -f "${VPS_crt}/$key" ]]; then
+            msg -verm2 "Archivos de certificado no encontrados en ${VPS_crt}"
+            enter
+            return
+        fi
+        
         title "CERTIFICADO SSL ENCONTRADO"
         echo -e "$(msg -azu "DOMI:") $(msg -ama "$DOMI")"
         echo -e "$(msg -azu "CERT:") $(msg -ama "$cert")"
         echo -e "$(msg -azu "KEY:")  $(msg -ama "$key")"
         msg -bar
-        msg -ne " Continuar [S/N]: " && read opcion_tls
-
-        if [[ $opcion_tls = @(S|s) ]]; then
-            cert=$(jq --arg a "${VPS_crt}/$cert" --arg b "${VPS_crt}/$key" '.inbounds[0].streamSettings.tlsSettings += {"certificates":[{"certificateFile":$a,"keyFile":$b}]}' < $config)
-            domi=$(echo "$cert"|jq --arg a "$DOMI" '.inbounds[0] += {"domain":$a}')
-            echo "$domi"|jq --arg a 'tls' '.inbounds[0].streamSettings += {"security":$a}' > $temp
-            chmod 777 $temp
-            mv -f $temp $config
+        
+        read -p " Continuar [S/N]: " opcion_tls
+        
+        if [[ $opcion_tls =~ ^[Ss]$ ]]; then
+            # Backup del config actual
+            cp $config ${config}.bak
+            # Remover realitySettings, cambiar a TLS y agregar tlsSettings
+            jq --arg a "${VPS_crt}/$cert" --arg b "${VPS_crt}/$key" --arg c "$DOMI" '
+                del(.inbounds[0].streamSettings.realitySettings) |
+                .inbounds[0].streamSettings.security = "tls" |
+                .inbounds[0].streamSettings.tlsSettings = {"certificates":[{"certificateFile":$a,"keyFile":$b}]} |
+                .inbounds[0].domain = $c
+            ' < $config > $temp
+            mv $temp $config
+            chmod 777 $config
+            
+            # Dar permisos a Xray (usuario nobody) para leer los certificados
+            chmod 644 ${VPS_crt}/$cert ${VPS_crt}/$key
+            chown nobody:nogroup ${VPS_crt}/$cert ${VPS_crt}/$key
+            
             restart
+            
+            # Verificar si Xray inició
+            if systemctl is-active --quiet xray; then
+                msg -verd "TLS configurado exitosamente"
+            else
+                msg -verm2 "Xray no inició. Restaurando config..."
+                mv ${config}.bak $config
+                systemctl restart xray
+                msg -verm2 "Logs de error:"
+                journalctl -u xray --no-pager -n 10
+            fi
+            enter
             return
         fi
     fi

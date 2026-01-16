@@ -103,7 +103,8 @@ profileInit(){
         "clients": [
           {
             "id": "$(uuidgen)",
-            "flow": "xtls-rprx-vision"
+            "flow": "xtls-rprx-vision",
+            "encryption": "none"
           }
         ],
         "decryption": "none"
