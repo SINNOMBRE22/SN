@@ -253,7 +253,7 @@ newuser(){
     dias=$(date '+%y-%m-%d' -d " +$opcion days")
     uuid=$(uuidgen)
     flow="xtls-rprx-vision"
-    var="{\"flow\":\"$flow\",\"id\":\"$uuid\",\"email\":\"$email\",\"date\":\"$dias\",\"encryption\":\"none\"}"
+   var="{\"flow\":\"$flow\",\"id\":\"$uuid\",\"email\":\"$email\",\"date\":\"$dias\"}"
 
     mv $config $temp
     jq --argjson a "$users" --argjson b "$var" '.inbounds[0].settings.clients[$a] += $b' < $temp > $config

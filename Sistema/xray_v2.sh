@@ -104,7 +104,6 @@ profileInit(){
           {
             "id": "$(uuidgen)",
             "flow": "xtls-rprx-vision",
-            "encryption": "none"
           }
         ],
         "decryption": "none"
