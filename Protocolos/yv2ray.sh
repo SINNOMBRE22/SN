@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 # =====================================================
 # AUTONOMÍA V2RAY - SINNOMBRE (Corregido y Mejorado)
 # Versión: 1.1 - Corregido ejecución, líneas truncadas, agregado checks y features

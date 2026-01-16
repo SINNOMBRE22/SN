@@ -200,7 +200,7 @@ vless(){
     [[ ! $path = '' ]] && col2 "Path:" "$path"
     msg -bar
 
-    params="type=$net&security=$security&flow=$flow"
+    params="type=$net&security=$security&flow=$flow&encryption=none"
     [[ ! $path = '' ]] && params="$params&path=$path"
     [[ ! $host = '' ]] && params="$params&host=$host"
     link="vless://$id@$add:$port?$params#$ps"
