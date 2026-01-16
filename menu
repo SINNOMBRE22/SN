@@ -321,7 +321,7 @@ main_menu() {
       read -r op
       case "${op:-}" in
         1) run_module "Usuarios/ssh.sh" ;;
-        2) run_module "Usuarios/v2ray.sh" ;;
+        2) run_module "Usuarios/xray_users_v2.sh" ;;
         3) run_module "Protocolos/menu.sh" ;;
         4) run_module "Herramientas/menu.sh" ;;
         5) banner_ssh_menu ;;
