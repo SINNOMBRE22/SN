@@ -10,7 +10,7 @@ dependencias(){
         soft="socat cron bash-completion ntpdate gawk jq uuid-runtime python-pip python3 python3-pip"
 
         for install in $soft; do
-                leng="${#install}" 
+                leng="${#install}"
                 puntos=$(( 21 - $leng))
                 pts="."
                 for (( a = 0; a < $puntos; a++ )); do
@@ -49,11 +49,11 @@ dependencias(){
 
         if [[ ! -e '/usr/bin/pip' ]]; then
                 _pip=$(type -p pip)
-                ln -s "$._pip" /usr/bin/pip
+                ln -s "$_pip" /usr/bin/pip
         fi
         if [[ ! -e '/usr/bin/pip3' ]]; then
                 _pip3=$(type -p pip3)
-                ln -s "$._pip3" /usr/bin/pip3
+                ln -s "$_pip3" /usr/bin/pip3
         fi
         msg -bar
 }
@@ -81,41 +81,67 @@ timeSync(){
 }
 
 updateProject(){
-    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
-    [[ -e /usr/share/bash-completion/completions/xray ]] && rm -f /usr/share/bash-completion/completions/xray
-    curl -sSL https://raw.githubusercontent.com/XTLS/Xray-core/main/extra/bash_completion/xray > /usr/share/bash-completion/completions/xray
-    if [[ -z $(echo $SHELL|grep zsh) ]];then
-        source /usr/share/bash-completion/completions/xray
-    fi
+        bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+        curl -sSL https://raw.githubusercontent.com/XTLS/Xray-core/main/extra/bash_completion/xray > /usr/share/bash-completion/completions/xray
+        if [[ -z $(echo $SHELL|grep zsh) ]];then
+                source /usr/share/bash-completion/completions/xray
+        fi
 }
 
 profileInit(){
     [[ $(grep xray ~/$ENV_FILE) ]] && sed -i '/xray/d' ~/$ENV_FILE && source ~/$ENV_FILE
     [[ -z $(grep PYTHONIOENCODING=utf-8 ~/$ENV_FILE) ]] && echo "export PYTHONIOENCODING=utf-8" >> ~/$ENV_FILE && source ~/$ENV_FILE
-    # Config inicial con REALITY
-    xray new &>/dev/null
+    # Config inicial básica
+    systemctl stop xray
+    cat > /usr/local/etc/xray/config.json <<EOF
+{
+  "inbounds": [
+    {
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "$(uuidgen)",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "www.google.com:443",
+          "xver": 0,
+          "serverNames": ["www.google.com"],
+          "privateKey": "$(xray x25519 | grep Private | cut -d: -f2 | tr -d ' ')",
+          "shortIds": [""]
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom"
+    }
+  ]
+}
+EOF
+    systemctl start xray
 }
 
 installFinish(){
     cd ${BEGIN_PATH}
 
-    config='/etc/xray/config.json'
-    temp='/etc/xray/temp.json'
-    # Configurar VLESS con REALITY por defecto
-    jq '.inbounds[0].protocol = "vless"' < /etc/xray/config.json > /etc/xray/temp.json
-    jq '.inbounds[0].settings.clients[0].id = "'$(uuidgen)'"' < /etc/xray/temp.json > /etc/xray/config.json
-    jq '.inbounds[0].settings.clients[0].flow = "xtls-rprx-vision"' < /etc/xray/config.json > /etc/xray/temp.json
-    mv /etc/xray/temp.json /etc/xray/config.json
-    jq '.inbounds[0].streamSettings.security = "reality"' < /etc/xray/config.json > /etc/xray/temp.json
-    mv /etc/xray/temp.json /etc/xray/config.json
-    chmod 777 /etc/xray/config.json
     msg -bar
-    if [[ $(xray restart|grep success) ]]; then
-            xray info
+    if systemctl is-active --quiet xray; then
+            echo "Xray está corriendo"
             msg -bar
         print_center -verd "INSTALACION FINALIZADA"
     else
-            xray info
+            echo "Xray no está corriendo"
             msg -bar
         print_center -verd "INSTALACION FINALIZADA"
         print_center -verm2 'Pero fallo el reinicio del servicio xray'
@@ -136,3 +162,4 @@ main(){
 }
 
 main
+

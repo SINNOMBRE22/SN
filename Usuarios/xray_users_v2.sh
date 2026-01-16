@@ -20,7 +20,7 @@ VPS_crt="/etc/SN/cert"
 mkdir -p "$SN_DIR" "$SN_INSTALL" "$SN_USERS" "$VPS_crt"
 
 # ===== ARCHIVOS XRAY =====
-config="/etc/xray/config.json"
+config="/usr/local/etc/xray/config.json"
 temp=$(mktemp)
 
 # ===== VALIDACIONES =====
@@ -105,6 +105,7 @@ in_opcion() {
 # ===== CHECK DEPS =====
 check_deps() {
     command -v jq >/dev/null 2>&1 || { msg -verm2 "jq no instalado."; exit 1; }
+    systemctl is-active --quiet xray || { msg -verm2 "xray no corriendo."; return 1; }
     [[ -f "$config" ]] || { msg -verm2 "Config no encontrado."; return 1; }
     return 0
 }
@@ -120,7 +121,8 @@ pause() {
 
 restart(){
     title "REINICIANDO XRAY"
-    if xray restart 2>&1 | grep -q "success"; then
+    systemctl restart xray
+    if systemctl is-active --quiet xray; then
         print_center -verd "xray restart success!"
         msg -bar
         sleep 3
@@ -163,6 +165,7 @@ list_user(){
         [[ "$user" = "null" ]] && continue
         blocked=$(jq -r --argjson a "$i" '.inbounds[0].settings.clients[$a].blocked // "false"' < $config)
         [[ "$blocked" = "true" ]] && continue
+        fecha=$(jq -r --argjson a "$i" '.inbounds[0].settings.clients[$a].date' < $config)
         seg_exp=$(date +%s --date="$fecha")
         exp="$(($(($seg_exp - $seg)) / 86400))"
         [[ "$exp" -lt "0" ]] && exp="EXP"

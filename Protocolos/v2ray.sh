@@ -20,7 +20,7 @@ VPS_crt="/etc/SN/cert"
 mkdir -p "$SN_DIR" "$SN_INSTALL" "$SN_USERS" "$VPS_crt"
 
 # ===== ARCHIVOS XRAY =====
-config="/etc/xray/config.json"
+config="/usr/local/etc/xray/config.json"
 temp=$(mktemp)
 
 # ===== VALIDACIONES =====
@@ -109,7 +109,7 @@ in_opcion() {
 # ===== CHECK DEPS =====
 check_deps() {
     command -v jq >/dev/null 2>&1 || { msg -verm2 "jq no está instalado."; exit 1; }
-    command -v xray >/dev/null 2>&1 || { msg -verm2 "xray no está instalado."; return 1; }
+    systemctl is-active --quiet xray || { msg -verm2 "xray no está corriendo."; return 1; }
     [[ -f "$config" ]] || { msg -verm2 "Config file no encontrado."; return 1; }
     return 0
 }
@@ -121,7 +121,8 @@ is_installed() {
 
 restart(){
     title "REINICIANDO XRAY"
-    if xray restart 2>&1 | grep -q "success"; then
+    systemctl restart xray
+    if systemctl is-active --quiet xray; then
         print_center -verd "xray restart success!"
         log "Xray reiniciado"
     else
@@ -175,20 +176,15 @@ removeXray(){
     [[ "$confirm" =~ ^[yY]$ ]] || return
     log "Eliminando Xray"
     bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove
-    rm -rf /etc/xray >/dev/null 2>&1
+    rm -rf /usr/local/etc/xray >/dev/null 2>&1
     rm -rf /var/log/xray >/dev/null 2>&1
-    pip uninstall v2ray_util -y >/dev/null 2>&1
     rm -rf /usr/share/bash-completion/completions/xray >/dev/null 2>&1
-    rm -rf /usr/share/bash-completion/completions/v2ray >/dev/null 2>&1
     rm -rf /usr/local/bin/xray >/dev/null 2>&1
-    rm -rf /usr/local/bin/v2ray >/dev/null 2>&1
-    rm -rf /etc/xray_util >/dev/null 2>&1
-    crontab -l|sed '/SHELL=/d;/xray/d'|sed '/SHELL=/d;/v2ray/d' > crontab.txt
+    crontab -l|sed '/SHELL=/d;/xray/d' > crontab.txt
     crontab crontab.txt >/dev/null 2>&1
     rm -f crontab.txt >/dev/null 2>&1
     systemctl restart cron >/dev/null 2>&1
     sed -i '/xray/d' ~/.bashrc
-    sed -i '/v2ray/d' ~/.bashrc
     source ~/.bashrc
     clear
     msg -bar
@@ -301,11 +297,44 @@ path(){
 reset(){
     title "RESTAURANDO AJUSTES XRAY"
     user=$(jq -c '.inbounds[0].settings.clients' < $config)
-    xray new
-    jq '.inbounds[0].protocol = "vless"' < $config > $temp
-    jq '.inbounds[0].settings.clients[0].flow = "xtls-rprx-vision"' < $temp > $config
-    jq '.inbounds[0].streamSettings.security = "reality"' < $config > $temp
-    mv $temp $config
+    systemctl stop xray
+    cat > /usr/local/etc/xray/config.json <<EOF
+{
+  "inbounds": [
+    {
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "$(uuidgen)",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "www.google.com:443",
+          "xver": 0,
+          "serverNames": ["www.google.com"],
+          "privateKey": "$(xray x25519 | grep Private | cut -d: -f2 | tr -d ' ')",
+          "shortIds": [""]
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom"
+    }
+  ]
+}
+EOF
+    systemctl start xray
     chmod 777 $config
     sleep 2
     if [[ ! -z "$user" ]]; then
@@ -331,7 +360,7 @@ if ! is_installed; then
         echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
         echo ""
         echo -e "${W}                     INSTALACIÓN${N}"
-        echo -e "${R}═════════��════════════════ / / / ══════════════════════════${N}"
+        echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
         echo -e "${R}[${Y}1${R}]${N}  ${C}INSTALAR XRAY${N}              ${R}[${Y}0${R}]${N}  ${C}VOLVER${N}"
         echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
         echo ""
@@ -370,7 +399,7 @@ do
     echo -e "${R}[${Y}6${R}]${N}  ${C}Configurar Path${N}"
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     echo -e "${W}                 CONFIGURACIÓN AVANZADA${N}"
-    echo -e "${R}═════════════════���════════ / / / ══════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     echo -e "${R}[${Y}7${R}]${N}  ${C}Certificado SSL/TLS${N}         ${R}[${Y}8${R}]${N}  ${C}Protocolos Xray${N}"
     echo -e "${R}[${Y}9${R}]${N}  ${C}Configuración Nativa${N}         ${R}[${Y}10${R}]${N} ${C}Restablecer Ajustes${N}"
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
@@ -393,7 +422,7 @@ do
         0)break;;
         *)
             clear
-            echo -e "${R}���═════════════════════════ / / / ══════════════════════════${N}"
+            echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
             echo -e "${B}                   OPCIÓN INVÁLIDA${N}"
             echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
             sleep 2
