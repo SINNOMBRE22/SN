@@ -194,75 +194,82 @@ get_service_type() {
   fi
 }
 
-show_services_status() {
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}                   SERVICIOS ACTIVOS${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+show_services_status() {    
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"    
+  echo -e "${W}                   SERVICIOS ACTIVOS${N}"    
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"    
+    
+  local lines    
+  lines="$(ss -H -lntup 2>/dev/null || true)"    
+    
+  declare -A services_ports    
+    
+  while read -r line; do    
+    [[ -z "$line" ]] && continue    
+    
+    local port proc pid unit    
+    port="$(echo "$line" | awk '{print $5}' | awk -F':' '{print $NF}')"    
+    [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]] && continue    
+    
+    proc="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' || true)"    
 
-  local lines
-  lines="$(ss -H -lntup 2>/dev/null || true)"
-
-  declare -A services_ports
-
-  while read -r line; do
-    [[ -z "$line" ]] && continue
-
-    local port proc pid unit
-    port="$(echo "$line" | awk '{print $5}' | awk -F':' '{print $NF}')"
-    [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]] && continue
-
-    proc="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' || true)"
-    pid="$(echo "$line" | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' || true)"
-    unit=""
-    [[ -n "$pid" ]] && unit="$(systemctl show -p Unit --value "$pid" 2>/dev/null || true)"
-
-    local service
-    service="$(get_service_type "$proc" "$unit")"
-
-    if [[ -n "${services_ports[$service]:-}" ]]; then
-      if [[ "${services_ports[$service]}" != *"$port"* ]]; then
-        services_ports[$service]="${services_ports[$service]}, $port"
+    # ================= FILTRO V2RAY/XRAY (SOLO TCP) =================
+    if [[ "$proc" =~ ^(v2ray|xray)$ ]]; then
+      # Ignorar cualquier socket UDP de v2ray/xray
+      if echo "$line" | grep -qiE 'udp|UNCONN'; then
+        continue
       fi
-    else
-      services_ports[$service]="$port"
     fi
-  done <<< "$lines"
+    # ================================================================
 
-  local count="${#services_ports[@]}"
-  if [[ "$count" -eq 0 ]]; then
-    echo -e "${Y}No se encontraron servicios activos${N}"
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-    echo ""
-    return 0
-  fi
-
-  local keys=("${!services_ports[@]}")
-local count=${#keys[@]}
-local half=$(( (count + 1) / 2 ))
-
-for ((i = 0; i < half; i++)); do
-  # --- COLUMNA 1 ---
-  # Calculamos cuánto espacio ocupa el texto sin colores para compensar el alineado
-  # Nombre (${C}), Dos puntos (${W}), Puerto (${G})
-  printf "${C}%s${W}: ${G}%s${N}" "${keys[$i]}" "${services_ports[${keys[$i]}]}"
-  
-  # Calculamos el espacio necesario para que la segunda columna no se mueva.
-  # Si el nombre + puerto es corto, añadimos espacios manuales.
-  actual_len=$((${#keys[$i]} + ${#services_ports[${keys[$i]}]} + 2))
-  spacer=$((30 - actual_len))
-  if [ $spacer -gt 0 ]; then
-    printf "%${spacer}s" " "
-  fi
-
-  # --- COLUMNA 2 ---
-  if [[ $((i + half)) -lt count ]]; then
-    idx_der=$((i + half))
-    printf "${C}%s${W}: ${G}%s${N}" "${keys[$idx_der]}" "${services_ports[${keys[$idx_der]}]}"
-  fi
-  
-  echo "" 
-done
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    pid="$(echo "$line" | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' || true)"    
+    unit=""    
+    [[ -n "$pid" ]] && unit="$(systemctl show -p Unit --value "$pid" 2>/dev/null || true)"    
+    
+    local service    
+    service="$(get_service_type "$proc" "$unit")"    
+    
+    if [[ -n "${services_ports[$service]:-}" ]]; then    
+      if [[ "${services_ports[$service]}" != *"$port"* ]]; then    
+        services_ports[$service]="${services_ports[$service]}, $port"    
+      fi    
+    else    
+      services_ports[$service]="$port"    
+    fi    
+  done <<< "$lines"    
+    
+  local count="${#services_ports[@]}"    
+  if [[ "$count" -eq 0 ]]; then    
+    echo -e "${Y}No se encontraron servicios activos${N}"    
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"    
+    echo ""    
+    return 0    
+  fi    
+    
+  local keys=("${!services_ports[@]}")    
+  local count=${#keys[@]}    
+  local half=$(( (count + 1) / 2 ))    
+    
+  for ((i = 0; i < half; i++)); do    
+    # --- COLUMNA 1 ---    
+    printf "${C}%s${W}: ${G}%s${N}" "${keys[$i]}" "${services_ports[${keys[$i]}]}"    
+    
+    actual_len=$((${#keys[$i]} + ${#services_ports[${keys[$i]}]} + 2))    
+    spacer=$((30 - actual_len))    
+    if [ $spacer -gt 0 ]; then    
+      printf "%${spacer}s" " "    
+    fi    
+    
+    # --- COLUMNA 2 ---    
+    if [[ $((i + half)) -lt count ]]; then    
+      idx_der=$((i + half))    
+      printf "${C}%s${W}: ${G}%s${N}" "${keys[$idx_der]}" "${services_ports[${keys[$idx_der]}]}"    
+    fi    
+    
+    echo ""    
+  done    
+    
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"    
 }
 
 show_system_status() {

@@ -171,6 +171,7 @@ main_menu_single() {
       16) run_proto "Protocolos/atken.sh" ;;
       17) run_proto "Protocolos/sshgo.sh" ;;
       18) run_proto "Protocolos/psiphon.sh" ;;
+      19) run_proto "Protocolos/xray.sh" ;;
       0)  break ;;
       *)  echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac
