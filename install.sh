@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =========================================================
-# SinNombre - Installer Profesional + Licencia + Banner
+# SinNombre - Installer 
 # VALIDATOR FIXED (usa el que SÍ funciona)
 # =========================================================
 
@@ -43,7 +43,7 @@ fail() { echo -e "${R}[FAIL]${N}"; }
 }
 
 # ============================
-# DEPENDENCIAS (VISIBLE)
+# DEPENDENCIAS
 # ============================
 install_deps() {
   clear
@@ -80,7 +80,7 @@ install_deps() {
 }
 
 # ============================
-# KEY / LICENCIA (VALIDADOR BUENO)
+# KEY / LICENCIA 
 # ============================
 validate_key() {
   mkdir -p "$LIC_DIR"
@@ -159,7 +159,7 @@ EOF
 }
 
 # ============================
-# BANNER DE BIENVENIDA (ORIGINAL)
+# BANNER DE BIENVENIDA 
 # ============================
 install_banner() {
   step "Instalando banner de bienvenida"

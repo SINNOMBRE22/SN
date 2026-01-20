@@ -214,12 +214,12 @@ show_services_status() {
     proc="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' || true)"    
 
     # ================= FILTRO V2RAY/XRAY (SOLO TCP) =================
-    if [[ "$proc" =~ ^(v2ray|xray)$ ]]; then
-      # Ignorar cualquier socket UDP de v2ray/xray
-      if echo "$line" | grep -qiE 'udp|UNCONN'; then
-        continue
-      fi
-    fi
+#    if [[ "$proc" =~ ^(v2ray|xray)$ ]]; then
+#      # Ignorar cualquier socket UDP de v2ray/xray
+#      if echo "$line" | grep -qiE 'udp|UNCONN'; then
+#        continue
+#      fi
+#    fi
     # ================================================================
 
     pid="$(echo "$line" | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' || true)"    
