@@ -161,14 +161,31 @@ read_port_range() {
     done
 }
 
+optimize_udp_speed() {
+    echo -e "${W}Optimizando sistema para mejor velocidad UDP...${N}"
+    
+    # Crear archivo de configuración persistente para sysctl
+    cat > /etc/sysctl.d/99-udp-custom.conf <<EOF
+net.core.rmem_max=4194304
+net.core.wmem_max=4194304
+net.core.netdev_max_backlog=250000
+net.core.somaxconn=4096
+EOF
+    
+    # Aplicar configuración
+    sysctl -p /etc/sysctl.d/99-udp-custom.conf >/dev/null 2>&1
+    
+    echo -e "${G}✓ Optimización completada${N}"
+}
+
 create_config() {
     mkdir -p "$CONFIG_DIR"
     cat > "$CONFIG_FILE" <<EOF
 {
   "listen": ":$DEFAULT_UDP_PORT",
   "port_range": "$DEFAULT_PORT_RANGE",
-  "stream_buffer": 67108864,
-  "receive_buffer": 134217728,
+  "stream_buffer": 4194304,
+  "receive_buffer": 8388608,
   "auth": {
     "mode": "passwords"
   }
@@ -225,7 +242,7 @@ toggle_service() {
 
 install_udp_custom() {
     clear
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    echo -e "${R}═══════════════════════���══ / / / ══════════════════════════${N}"
     echo -e "${Y}          INSTALANDO UDP-CUSTOM${N}"
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 
@@ -254,6 +271,13 @@ install_udp_custom() {
     # Crear configuración
     create_config
 
+    # Optimizar velocidad UDP
+    optimize_udp_speed
+
+    # Asegurar que el archivo de log exista
+    touch "$LOG_FILE"
+    chmod 644 "$LOG_FILE"
+
     # Crear archivo de servicio
     echo -e "${W}Creando servicio systemd...${N}"
     cat > "$SERVICE_FILE" <<EOF
@@ -266,7 +290,7 @@ Wants=network.target
 Type=simple
 User=root
 WorkingDirectory=$CONFIG_DIR
-ExecStart=$UDP_BIN server
+ExecStart=$UDP_BIN server -c $CONFIG_FILE
 Restart=always
 RestartSec=5
 StandardOutput=append:$LOG_FILE
@@ -286,9 +310,14 @@ EOF
     sleep 3
 
     if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-        echo -e "${G}✓ UDP-Custom instalado y activo${N}"
-        echo -e "${W}  Puerto: ${Y}$(get_udp_port)${N}"
-        echo -e "${W}  Proceso: ${Y}$(get_udp_process)${N}"
+        # Verificar que el proceso esté usando el config
+        if ps aux | grep -q "[u]dp-custom.*-c $CONFIG_FILE"; then
+            echo -e "${G}✓ UDP-Custom instalado y activo${N}"
+            echo -e "${W}  Puerto: ${Y}$(get_udp_port)${N}"
+            echo -e "${W}  Proceso: ${Y}$(get_udp_process)${N}"
+        else
+            echo -e "${Y}⚠ Servicio activo pero no usando config.json${N}"
+        fi
     else
         echo -e "${Y}⚠ Servicio instalado pero no iniciado${N}"
     fi
@@ -314,6 +343,7 @@ uninstall_udp_custom() {
         rm -f "$SERVICE_FILE"
         rm -f "$UDP_BIN"
         rm -rf "$CONFIG_DIR"
+        rm -f /etc/sysctl.d/99-udp-custom.conf
 
         systemctl daemon-reload
 
@@ -364,7 +394,7 @@ show_udp_menu() {
 }
 
 show_detailed_status() {
-    echo -e "${Y}─────────────────────────── / / / ──────────────────────────${N}"
+    echo -e "${Y}───────────────���─────────── / / / ──────────────────────────${N}"
     echo -e "${W}Servicio systemd:${N}"
     systemctl status "$SERVICE_NAME" --no-pager -l
 
