@@ -95,7 +95,7 @@ get_udp_port() {
     if [[ -f "$CONFIG_FILE" ]]; then
         # Intentar leer el puerto desde config.json
         local port
-        port=$(jq -r '.port // empty' "$CONFIG_FILE" 2>/dev/null)
+        port=$(jq -r '.listen // empty' "$CONFIG_FILE" 2>/dev/null | sed 's/://')
 
         if [[ -n "$port" ]] && [[ "$port" != "null" ]]; then
             echo "$port"
@@ -163,18 +163,20 @@ read_port_range() {
 
 create_config() {
     mkdir -p "$CONFIG_DIR"
-    PORT=$(read_port)
-    PORT_RANGE=$(read_port_range)
-
     cat > "$CONFIG_FILE" <<EOF
 {
-  "port": $PORT,
-  "port_range": "$PORT_RANGE"
+  "listen": ":$DEFAULT_UDP_PORT",
+  "port_range": "$DEFAULT_PORT_RANGE",
+  "stream_buffer": 67108864,
+  "receive_buffer": 134217728,
+  "auth": {
+    "mode": "passwords"
+  }
 }
 EOF
     echo -e "${G}✓ Configuración creada${N}"
-    echo -e "${W}  Puerto: ${Y}$PORT${N}"
-    echo -e "${W}  Rango:  ${Y}$PORT_RANGE${N}"
+    echo -e "${W}  Puerto: ${Y}$DEFAULT_UDP_PORT${N}"
+    echo -e "${W}  Rango:  ${Y}$DEFAULT_PORT_RANGE${N}"
 }
 
 validate_repair_config() {
@@ -223,9 +225,9 @@ toggle_service() {
 
 install_udp_custom() {
     clear
-    echo -e "${R}══════════════════════════════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     echo -e "${Y}          INSTALANDO UDP-CUSTOM${N}"
-    echo -e "${R}══════════════════════════════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 
     # Actualizar e instalar dependencias
     echo -e "${W}Actualizando sistema...${N}"
@@ -238,7 +240,7 @@ install_udp_custom() {
     # Descargar UDP-Custom
     echo -e "${W}Descargando UDP-Custom...${N}"
     if [[ ! -x "$UDP_BIN" ]]; then
-        wget -q -O "$UDP_BIN" "https://raw.githubusercontent.com/http-custom/udpcustom/main/folder/udp-custom.sh"
+        wget -q -O "$UDP_BIN" "https://github.com/http-custom/udpcustom/raw/main/folder/udp-custom-linux-amd64.bin"
         if [[ $? -eq 0 ]]; then
             chmod +x "$UDP_BIN"
             echo -e "${G}✓ UDP-Custom descargado${N}"
@@ -291,14 +293,14 @@ EOF
         echo -e "${Y}⚠ Servicio instalado pero no iniciado${N}"
     fi
 
-    echo -e "${R}══════════════════════════════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     read -r -p "Presiona Enter para continuar..."
 }
 
 uninstall_udp_custom() {
-    echo -e "${R}══════════════════════════════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     echo -e "${Y}         DESINSTALANDO UDP-CUSTOM${N}"
-    echo -e "${R}══════════════════════════════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 
     echo -e "${Y}¿Estás seguro de desinstalar UDP-Custom? (s/n): ${N}"
     read -r confirm
@@ -328,21 +330,21 @@ uninstall_udp_custom() {
 # -------------------------------
 show_udp_banner() {
     clear
-    echo -e "${R}══════════════════════════════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     echo -e "${R}[ ${G}●        UDP CUSTOM MANAGER ●${R} ]${N}"
-    echo -e "${R}══════════════════════════════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     echo -e "${R}[${N} ${W}IP Pública: ${Y}$(get_public_ip)${N}"
     echo -e "${R}[${N} ${W}Estado: ${G}$(get_service_status)${N} ${W}- Proceso: ${Y}$(get_udp_process)${N}"
     echo -e "${R}[${N} ${W}Puerto UDP: ${Y}$(get_udp_port)${N}"
     echo -e "${R}[${N} ${W}Rango Puertos: ${Y}$(get_port_range)${N}"
     echo -e "${R}[${N} ${W}Usuarios SSH: ${C}$(count_ssh_users)${N}"
     echo -e "${R}[${N} ${W}Conexiones UDP: ${C}$(count_udp_connections)${N}"
-    echo -e "${R}══════════════════════════════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
 
 show_udp_menu() {
     echo -e "${W}              MENÚ UDP-CUSTOM${N}"
-    echo -e "${R}══════════════════════════════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 
     if ! is_udp_installed; then
         echo -e "${R}[${Y}1${R}]${N}  ${C}Instalar UDP-Custom${N}"
@@ -358,11 +360,11 @@ show_udp_menu() {
     fi
 
     echo -e "${R}[${Y}0${R}]${N}  ${C}Salir${N}"
-    echo -e "${R}══════════════════════════════════════════════════${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
 
 show_detailed_status() {
-    echo -e "${Y}════════ ESTADO DETALLADO UDP-CUSTOM ════════${N}"
+    echo -e "${Y}─────────────────────────── / / / ──────────────────────────${N}"
     echo -e "${W}Servicio systemd:${N}"
     systemctl status "$SERVICE_NAME" --no-pager -l
 
@@ -413,7 +415,7 @@ udp_custom_menu() {
                     read -r -p "Presiona Enter para continuar..." ;;
                 4) 
                     new_port=$(read_port)
-                    if jq ".port = $new_port" "$CONFIG_FILE" > /tmp/udp_config.tmp 2>/dev/null; then
+                    if jq ".listen = \":$new_port\"" "$CONFIG_FILE" > /tmp/udp_config.tmp 2>/dev/null; then
                         mv /tmp/udp_config.tmp "$CONFIG_FILE"
                         echo -e "${G}✓ Puerto actualizado a $new_port${N}"
                         restart_udp_custom

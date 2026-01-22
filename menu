@@ -1,9 +1,7 @@
 #!/bin/bash
-set -uo pipefail
-export LANG=en_US.UTF-8
-export LC_ALL=en_US.UTF-8
-export LANG=C.UTF-8
-export LC_ALL=C.UTF-8
+set -uo pipefail 
+#!/bin/bash
+ROOT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 # =========================================================
 # SinNombre v2.0 - Panel CLI (Ubuntu 22.04+)
 # Creador: @SIN_NOMBRE22
@@ -73,14 +71,16 @@ check_license
 #________________________________________
 run_module() {
   local rel="$1"
-  local path="${ROOT_DIR}/${rel}"
+  local path="$ROOT_DIR/$rel"
+
   if [[ -f "$path" ]]; then
+    chmod +x "$path"
     bash "$path"
-    # Cuando el módulo termina, limpia la pantalla y retorna
     clear_screen
   else
-    echo ""
+    echo
     echo -e "${Y}Módulo no disponible:${N} ${C}${rel}${N}"
+    echo -e "${Y}Ruta esperada:${N} $path"
     echo -e "${Y}Estado:${N} En desarrollo..."
     pause
   fi
