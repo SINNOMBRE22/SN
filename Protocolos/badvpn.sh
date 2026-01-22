@@ -1,4 +1,3 @@
-
 #!/bin/bash
 set -euo pipefail
 
@@ -125,7 +124,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root
-ExecStart=${BIN} --listen-addr ${ip}:${port} --max-clients ${max_clients} --max-connections-for-client ${max_conn}
+ExecStart=${BIN} --listen-addr ${ip}:${port} --max-clients ${max_clients} --max-connections-for-client ${max_conn} --client-socket-sndbuf 1048576 --udp-mtu 9000
 Restart=always
 RestartSec=3s
 
@@ -149,13 +148,13 @@ configure_and_start(){
   port="${port:-7300}"
   [[ "$port" =~ ^[0-9]+$ ]] || port="7300"
 
-  read -r -p "Max clients [1000]: " max_clients
-  max_clients="${max_clients:-1000}"
-  [[ "$max_clients" =~ ^[0-9]+$ ]] || max_clients="1000"
+  read -r -p "Max clients [2000]: " max_clients
+  max_clients="${max_clients:-2000}"
+  [[ "$max_clients" =~ ^[0-9]+$ ]] || max_clients="2000"
 
-  read -r -p "Max conexiones por cliente [10]: " max_conn
-  max_conn="${max_conn:-10}"
-  [[ "$max_conn" =~ ^[0-9]+$ ]] || max_conn="10"
+  read -r -p "Max conexiones por cliente [100]: " max_conn
+  max_conn="${max_conn:-100}"
+  [[ "$max_conn" =~ ^[0-9]+$ ]] || max_conn="100"
 
   write_service "$ip" "$port" "$max_clients" "$max_conn"
 
