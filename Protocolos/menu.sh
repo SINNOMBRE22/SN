@@ -42,6 +42,7 @@ check_ssh_status() { ( is_active_systemd ssh || is_active_systemd sshd ) && echo
 check_dropbear_status() { ( is_active_systemd dropbear || pgrep -x dropbear >/dev/null 2>&1 ) && echo "true" || echo "false"; }
 check_stunnel_status() { ( is_active_systemd stunnel4 || pgrep -x stunnel4 >/dev/null 2>&1 ) && echo "true" || echo "false"; }
 check_squid_status() { ( is_active_systemd squid || is_active_systemd squid3 ) && echo "true" || echo "false"; }
+check_haproxy_mux_status() { ( is_active_systemd haproxy-mux || is_active_systemd haproxy ) && echo "true" || echo "false"; }
 
 py_socks_units() {
   systemctl list-units --type=service --all 2>/dev/null \
@@ -87,7 +88,7 @@ main_menu_single() {
   while true; do
     clear
 
-    local ssh_st dropbear_st stunnel_st squid_st socks_st v2_st udp_st badvpn_st
+    local ssh_st dropbear_st stunnel_st squid_st socks_st v2_st udp_st badvpn_st haproxy_st
 
     ssh_st="$(status_badge "$(check_ssh_status)")"
     dropbear_st="$(status_badge "$(check_dropbear_status)")"
@@ -97,6 +98,7 @@ main_menu_single() {
     v2_st="$(status_badge "$(check_v2ray_status)")"
     udp_st="$(status_badge "$(check_udp_custom_status)")"
     badvpn_st="$(status_badge "$(check_badvpn_status)")"
+    haproxy_st="$(status_badge "$(check_haproxy_mux_status)")"
 
     title_box "INSTALADORES"
     echo ""
@@ -109,6 +111,7 @@ main_menu_single() {
     print_item_list "06" "BADVPN-UDPGW" "$badvpn_st"
     print_item_list "07" "UDP-CUSTOM" "$udp_st"
     print_item_list "08" "V2RAY" "$v2_st"
+    print_item_list "09" "HAPROXY MUX" "$haproxy_st"
 
     echo ""
     printf "${W}> ${Y}%2s${W} ─ ${C}${BOLD}%-15s${N}\n" "00" "VOLVER"
@@ -128,6 +131,7 @@ main_menu_single() {
       06|6) run_proto "Protocolos/badvpn.sh" ;;
       07|7) run_proto "Protocolos/udp-custom.sh" ;;
       08|8) run_proto "Protocolos/v2ray.sh" ;;
+      09|9) run_proto "Protocolos/haproxy_mux.sh" ;;
       00|0) break ;;
       *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac
