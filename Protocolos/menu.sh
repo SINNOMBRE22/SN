@@ -108,7 +108,7 @@ main_menu_single() {
     print_item_list "05" "SQUID PROXY" "$squid_st"
     print_item_list "06" "BADVPN-UDPGW" "$badvpn_st"
     print_item_list "07" "UDP-CUSTOM" "$udp_st"
-    print_item_list "08" "V2RAY / XRAY" "$v2_st"
+    print_item_list "08" "V2RAY" "$v2_st"
 
     echo ""
     printf "${W}> ${Y}%2s${W} ─ ${C}${BOLD}%-15s${N}\n" "00" "VOLVER"

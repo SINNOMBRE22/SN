@@ -371,7 +371,7 @@ show_full_menu() {
   echo -e "${W}                     MENÚ PRINCIPAL${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[${Y}1${R}]${N}  ${C}USUARIOS SSH${N}             ${R}[${Y}5${R}]${N}  ${C}BANNER SSH${N}"
-  echo -e "${R}[${Y}2${R}]${N}  ${C}USUARIOS V2RAY/XRAY${N}      ${R}[${Y}6${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
+  echo -e "${R}[${Y}2${R}]${N}  ${C}USUARIOS V2RAY${N}           ${R}[${Y}6${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
   echo -e "${R}[${Y}3${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}7${R}]${N}  ${C}SPEEDTEST${N}"
   echo -e "${R}[${Y}4${R}]${N}  ${C}HERRAMIENTAS${N}"
   echo -e "${R}─────────────────────────── / / / ──────────────────────────${N}"
