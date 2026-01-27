@@ -1,242 +1,227 @@
 #!/bin/bash
 set -euo pipefail
 
-# =========================================================
-# SinNombre v1.0 - SLOWDNS (DNS Tunnel) Estilo ADMRufu (Rufu99)
-# Archivo: SN/Protocolos/slowdns.sh
-# =========================================================
+# =======================================================================
+# SlowDNS (DNSTT) Installer for Ubuntu 22.04 - Independent Setup
+# Author: SINNOMBRE22
+# Description: Sets up SlowDNS server without touching user management.
+#              Prepares the server to accept SlowDNS connections validated
+#              by existing SSH (port 22). No modifications to /etc/passwd or users.
+# =======================================================================
 
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
-D='\033[2m'
+# -------------------------------
+# Global Variables
+# -------------------------------
+readonly DNSTT_BINARY_URL="https://github.com/SINNOMBRE22/VPS-SN/raw/main/utilidades/SlowDNS/dns-server"  # Replace with actual reliable URL if needed
+readonly DNSTT_BINARY_PATH="/etc/SN/dns-server"
+readonly DNSTT_CONFIG_DIR="/etc/SN/slowdns"
+readonly SERVER_KEY="${DNSTT_CONFIG_DIR}/server.key"
+readonly SERVER_PUB="${DNSTT_CONFIG_DIR}/server.pub"
+readonly SYSTEMD_SERVICE="/etc/systemd/system/slowdns.service"
+readonly RESOLVED_CONF="/etc/systemd/resolved.conf"
+readonly RESOLV_CONF="/etc/resolv.conf"
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# -------------------------------
+# Utility Functions
+# -------------------------------
 
-pause(){ echo ""; read -r -p "Presiona Enter para continuar..."; }
-hr(){ echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
-sep(){ echo -e "${R}------------------------------------------------------------${N}"; }
-
-require_root(){ [[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo -e "${R}Ejecuta como root.${N}"; exit 1; }; }
-
-VPS_slow="/etc/SN/slowdns"
-VPS_inst="/etc/SN"
-mkdir -p "$VPS_slow" >/dev/null 2>&1
-
-mportas() {
-  ss -H -lnt 2>/dev/null | awk '{print $4}' | awk -F: '{print $NF}' | sort -n | uniq
-}
-
-drop_port(){
-  DPB=""
-  local portasVAR
-  portasVAR="$(lsof -V -i tcp -P -n 2>/dev/null | grep -v "ESTABLISHED" | grep -v "COMMAND" | grep "LISTEN" || true)"
-  local NOREPEAT=""
-  local reQ Port
-
-  while read -r port; do
-    [[ -z "${port:-}" ]] && continue
-    reQ="$(echo "${port}" | awk '{print $1}')"
-    Port="$(echo "${port}" | awk '{print $9}' | awk -F ":" '{print $2}')"
-    [[ -z "${Port:-}" ]] && continue
-
-    echo -e "$NOREPEAT" | grep -qw "$Port" && continue
-    NOREPEAT+="$Port\n"
-
-    case "${reQ}" in
-      sshd|dropbear|stunnel4|stunnel|python|python3) DPB+=" ${reQ}:${Port}" ;;
-      *) continue ;;
-    esac
-  done <<< "${portasVAR}"
-}
-
-info(){
-  clear
-  hr
-  echo -e "${W}          DATOS DE SU CONECCION SLOWDNS${N}"
-  hr
-
-  local ns="" key=""
-  if [[ -e "${VPS_slow}/domain_ns" ]]; then
-    ns="$(cat "${VPS_slow}/domain_ns")"
-  fi
-  if [[ -e "${VPS_slow}/server.pub" ]]; then
-    key="$(cat "${VPS_slow}/server.pub")"
-  fi
-
-  if [[ -z "$ns" || -z "$key" ]]; then
-    echo -e "${Y}SIN INFORMACION SLOWDNS!!!${N}"
-    pause
-    return
-  fi
-
-  echo -e "${Y}Su NS (Nameserver): ${G}$ns${N}"
-  hr
-  echo -e "${Y}Su Llave: ${G}$key${N}"
-  pause
-}
-
-ini_slow(){
-  clear
-  hr
-  echo -e "${W}          INSTALADOR SLOWDNS By SinNombre${N}"
-  hr
-  echo -e "${C}Seleccione puerto de redireccion${N}"
-  sep
-
-  drop_port
-  local n=1 num_opc=0
-  unset drop || true
-  declare -a drop
-
-  for i in $DPB; do
-    local proto proto2 port
-    proto="$(echo "$i" | awk -F ":" '{print $1}')"
-    proto2="$(printf '%-12s' "$proto")"
-    port="$(echo "$i" | awk -F ":" '{print $2}')"
-    echo -e " ${G}[$n]${N} ${W}>${N} ${C}${proto2}${N}${Y}${port}${N}"
-    drop[$n]="$port"
-    num_opc="$n"
-    ((n++))
-  done
-  sep
-
-  local opc=""
-  while [[ -z "${opc:-}" ]]; do
-    echo -ne "${W}Opcion: ${G}"
-    read -r opc
-    [[ "${opc:-}" =~ ^[0-9]+$ ]] || { echo -e "${R}Solo números.${N}"; opc=""; continue; }
-    [[ -n "${drop[$opc]:-}" ]] || { echo -e "${R}Opción inválida.${N}"; opc=""; continue; }
-  done
-
-  echo "${drop[$opc]}" > "${VPS_slow}/puerto"
-  PORT="$(cat "${VPS_slow}/puerto")"
-  clear
-  hr
-  echo -e "${W}INSTALADOR SLOWDNS By SinNombre${N}"
-  hr
-  echo -e "${Y}Puerto de coneccion a traves de SlowDNS: ${G}$PORT${N}"
-  hr
-
-  local NS=""
-  while [[ -z "$NS" ]]; do
-    echo -ne "${W}Tu dominio NS: ${G}"
-    read -r NS
-    tput cuu1 && tput dl1
-  done
-  echo "$NS" > "${VPS_slow}/domain_ns"
-  echo -e "${Y}Tu dominio NS: ${G}$NS${N}"
-  hr
-
-  if [[ ! -e "${VPS_inst}/dns-server" ]]; then
-    echo -ne "${W}Descargando binario....${N}"
-    if wget -O "${VPS_inst}/dns-server" https://github.com/SINNOMBRE22/VPS-SN/raw/main/utilidades/SlowDNS/dns-server &>/dev/null; then
-      chmod +x "${VPS_inst}/dns-server"
-      echo -e "${G}[OK]${N}"
-    else
-      echo -e "${R}[fail]${N}"
-      hr
-      echo -e "${Y}No se pudo descargar el binario${N}"
-      echo -e "${R}Instalacion cancelada${N}"
-      pause
-      return
+# Check if running as root
+require_root() {
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        echo "Error: This script must be run as root."
+        exit 1
     fi
-    hr
-  fi
-
-  local pub=""
-  [[ -e "${VPS_slow}/server.pub" ]] && pub="$(cat "${VPS_slow}/server.pub")"
-
-  if [[ -n "$pub" ]]; then
-    echo -ne "${W}Usar clave existente [S/N]: ${G}"
-    read -r ex_key
-    tput cuu1 && tput dl1
-
-    case "$ex_key" in
-      s|S|y|Y) echo -e "${Y}Tu clave: ${G}$pub${N}" ;;
-      n|N) rm -rf "${VPS_slow}/server.key" "${VPS_slow}/server.pub"
-           "${VPS_inst}/dns-server" -gen-key -privkey-file "${VPS_slow}/server.key" -pubkey-file "${VPS_slow}/server.pub" &>/dev/null
-           echo -e "${Y}Tu clave: ${G}$(cat "${VPS_slow}/server.pub")${N}" ;;
-      *) ;;
-    esac
-  else
-    rm -rf "${VPS_slow}/server.key" "${VPS_slow}/server.pub"
-    "${VPS_inst}/dns-server" -gen-key -privkey-file "${VPS_slow}/server.key" -pubkey-file "${VPS_slow}/server.pub" &>/dev/null
-    echo -e "${Y}Tu clave: ${G}$(cat "${VPS_slow}/server.pub")${N}"
-  fi
-  hr
-  echo -ne "${W}Iniciando SlowDNS....${N}"
-
-  iptables -I INPUT -p udp --dport 5300 -j ACCEPT >/dev/null 2>&1
-  iptables -t nat -I PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300 >/dev/null 2>&1
-
-  if screen -dmS slowdns "${VPS_inst}/dns-server" -udp :5300 -privkey-file "${VPS_slow}/server.key" "$NS" 127.0.0.1:"$PORT"; then
-    echo -e "${G}Con exito!!!${N}"
-  else
-    echo -e "${R}Con fallo!!!${N}"
-  fi
-  pause
 }
 
-reset_slow(){
-  clear
-  hr
-  echo -ne "${W}Reiniciando SlowDNS....${N}"
-  screen -ls | grep slowdns | cut -d. -f1 | awk '{print $1}' | xargs kill >/dev/null 2>&1
-  NS="$(cat "${VPS_slow}/domain_ns")"
-  PORT="$(cat "${VPS_slow}/puerto")"
-  if screen -dmS slowdns "${VPS_inst}/dns-server" -udp :5300 -privkey-file "${VPS_slow}/server.key" "$NS" 127.0.0.1:"$PORT"; then
-    echo -e "${G}Con exito!!!${N}"
-  else
-    echo -e "${R}Con fallo!!!${N}"
-  fi
-  pause
+# Print colored output
+print_info() { echo -e "\e[34m[INFO]\e[0m $*" >&2; }
+print_warn() { echo -e "\e[33m[WARN]\e[0m $*" >&2; }
+print_error() { echo -e "\e[31m[ERROR]\e[0m $*" >&2; }
+print_success() { echo -e "\e[32m[SUCCESS]\e[0m $*" >&2; }
+
+# -------------------------------
+# Step 1: Free Port 53 (systemd-resolved)
+# -------------------------------
+# In Ubuntu 22.04, systemd-resolved binds to port 53 by default.
+# We disable its stub listener to free port 53, then configure
+# /etc/resolv.conf to use external DNS (8.8.8.8) for resolution.
+free_port_53() {
+    print_info "Freeing port 53 by configuring systemd-resolved..."
+
+    # Backup and modify resolved.conf
+    if [[ ! -f "${RESOLVED_CONF}.bak" ]]; then
+        cp "$RESOLVED_CONF" "${RESOLVED_CONF}.bak"
+    fi
+
+    # Set DNSStubListener=no to prevent systemd-resolved from binding to 53
+    sed -i '/^DNSStubListener=/d' "$RESOLVED_CONF"
+    echo "DNSStubListener=no" >> "$RESOLVED_CONF"
+
+    # Configure resolv.conf with external DNS
+    rm -f "$RESOLV_CONF"  # Remove symlink if exists
+    echo "nameserver 8.8.8.8" > "$RESOLV_CONF"
+    echo "nameserver 8.8.4.4" >> "$RESOLV_CONF"
+
+    # Restart systemd-resolved
+    systemctl restart systemd-resolved.service
+
+    # Verify port 53 is free (should not be bound by systemd-resolved)
+    if ss -uln | grep -q ":53 "; then
+        print_warn "Port 53 still in use. Manual check required."
+    else
+        print_success "Port 53 freed successfully."
+    fi
 }
 
-stop_slow(){
-  clear
-  hr
-  echo -ne "${W}Deteniendo SlowDNS....${N}"
-  if screen -ls | grep slowdns | cut -d. -f1 | awk '{print $1}' | xargs kill >/dev/null 2>&1; then
-    echo -e "${G}Con exito!!!${N}"
-  else
-    echo -e "${R}Con fallo!!!${N}"
-  fi
-  pause
+# -------------------------------
+# Step 2: Download DNSTT Binary
+# -------------------------------
+download_binary() {
+    print_info "Downloading DNSTT binary..."
+
+    mkdir -p "$(dirname "$DNSTT_BINARY_PATH")"
+
+    if [[ ! -f "$DNSTT_BINARY_PATH" ]]; then
+        if ! curl -fsSL "$DNSTT_BINARY_URL" -o "$DNSTT_BINARY_PATH"; then
+            print_error "Failed to download DNSTT binary from $DNSTT_BINARY_URL"
+            exit 1
+        fi
+        chmod +x "$DNSTT_BINARY_PATH"
+        print_success "DNSTT binary downloaded and made executable."
+    else
+        print_info "DNSTT binary already exists."
+    fi
 }
 
-main_menu(){
-  require_root
+# -------------------------------
+# Step 3: Generate Keys (only if not exist)
+# -------------------------------
+generate_keys() {
+    print_info "Checking/generating DNSTT keys..."
 
-  while true; do
-    clear
-    hr
-    echo -e "${W}          INSTALADOR SLOWDNS By SinNombre${N}"
-    hr
-    echo -e "${R}[${Y}1${R}]${N} ${C}Ver Informacion${N}"
-    echo -e "${R}[${Y}2${R}]${N} ${G}Iniciar SlowDNS${N}"
-    echo -e "${R}[${Y}3${R}]${N} ${Y}Reiniciar SlowDNS${N}"
-    echo -e "${R}[${Y}4${R}]${N} ${R}Parar SlowDNS${N}"
-    hr
-    echo -e "${R}[${Y}0${R}]${N} ${W}VOLVER${N}"
-    hr
+    mkdir -p "$DNSTT_CONFIG_DIR"
+
+    if [[ ! -f "$SERVER_KEY" ]] || [[ ! -f "$SERVER_PUB" ]]; then
+        print_info "Generating new key pair..."
+        "$DNSTT_BINARY_PATH" -gen-key -privkey-file "$SERVER_KEY" -pubkey-file "$SERVER_PUB"
+        chmod 600 "$SERVER_KEY"
+        chmod 644 "$SERVER_PUB"
+        print_success "Keys generated."
+    else
+        print_info "Keys already exist."
+    fi
+}
+
+# -------------------------------
+# Step 4: Configure Firewall (iptables)
+# -------------------------------
+configure_firewall() {
+    print_info "Configuring iptables for DNSTT..."
+
+    # Redirect UDP port 53 to internal port 5300
+    if ! iptables -t nat -C PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300 2>/dev/null; then
+        iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300
+    fi
+
+    # Allow incoming UDP on 5300 (for internal DNSTT server)
+    if ! iptables -C INPUT -p udp --dport 5300 -j ACCEPT 2>/dev/null; then
+        iptables -I INPUT -p udp --dport 5300 -j ACCEPT
+    fi
+
+    # Make persistent (install iptables-persistent if not present)
+    if ! dpkg -l | grep -q iptables-persistent; then
+        print_info "Installing iptables-persistent for rule persistence..."
+        DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y iptables-persistent -qq
+    fi
+
+    # Save rules
+    netfilter-persistent save >/dev/null 2>&1 || iptables-save > /etc/iptables/rules.v4
+
+    print_success "Firewall configured and rules saved."
+}
+
+# -------------------------------
+# Step 5: Create systemd Service
+# -------------------------------
+create_service() {
+    print_info "Creating systemd service for DNSTT..."
+
+    # Prompt for NS domain
+    local ns_domain=""
+    while [[ -z "$ns_domain" ]]; do
+        read -p "Enter the NS domain for SlowDNS (e.g., ns.example.com): " ns_domain
+        if [[ -z "$ns_domain" ]]; then
+            print_error "NS domain cannot be empty."
+        fi
+    done
+
+    # Save NS to config
+    echo "$ns_domain" > "${DNSTT_CONFIG_DIR}/domain_ns"
+
+    # Create service file
+    cat > "$SYSTEMD_SERVICE" <<EOF
+[Unit]
+Description=SlowDNS DNSTT Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$DNSTT_CONFIG_DIR
+ExecStart=$DNSTT_BINARY_PATH -udp :5300 -privkey-file $SERVER_KEY $ns_domain 127.0.0.1:22
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Reload and enable
+    systemctl daemon-reload
+    systemctl enable slowdns.service
+    systemctl restart slowdns.service
+
+    print_success "Systemd service created and started."
+}
+
+# -------------------------------
+# Main Function
+# -------------------------------
+main() {
+    require_root
+
+    print_info "Starting SlowDNS (DNSTT) installation for Ubuntu 22.04..."
+    print_info "This script only sets up the server for SlowDNS connections."
+    print_info "User validation will be handled by existing SSH on port 22."
+
+    # Run steps
+    free_port_53
+    download_binary
+    generate_keys
+    configure_firewall
+    create_service
+
+    # Final output
+    local ns_domain pub_key
+    ns_domain=$(cat "${DNSTT_CONFIG_DIR}/domain_ns")
+    pub_key=$(cat "$SERVER_PUB")
+
+    print_success "SlowDNS setup complete!"
     echo ""
-    echo -ne "${W}Selecciona una opcion: ${G}"
-    read -r opcion
+    echo "=================== CONFIGURATION SUMMARY ==================="
+    echo "NS Domain: $ns_domain"
+    echo "Public Key: $pub_key"
+    echo ""
+    echo "=================== HTTP Custom Setup Guide ==================="
+    echo "1. In HTTP Custom app, go to SlowDNS settings."
+    echo "2. Enter NS Domain: $ns_domain"
+    echo "3. Enter Public Key: $pub_key"
+    echo "4. Set DNS Server to: 8.8.8.8 or your VPS IP."
+    echo "5. Connect via SSH (port 22) as usual."
+    echo "============================================================"
 
-    case "${opcion:-}" in
-      1) info ;;
-      2) ini_slow ;;
-      3) reset_slow ;;
-      4) stop_slow ;;
-      0) break ;;
-      *) echo -e "${B}Opcion invalida${N}"; sleep 1 ;;
-    esac
-  done
+    print_info "Service status: $(systemctl is-active slowdns.service)"
 }
 
-main_menu
+# Run main
+main "$@"

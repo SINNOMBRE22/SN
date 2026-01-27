@@ -1,5 +1,5 @@
 #!/bin/bash
-set -uo pipefail 
+set -uo pipefail
 #!/bin/bash
 ROOT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 # =========================================================
@@ -50,9 +50,9 @@ license_box() {
   exit 1
 }
 
+# Función optimizada para IP pública (sin cache, timeout 0.2s)
 get_public_ip() {
-  # intenta varias fuentes; si falla retorna vacío
-  curl -fsS --max-time 2 https://api.ipify.org 2>/dev/null || true
+  timeout 0.2 bash -c "curl -fsS https://api.ipify.org 2>/dev/null" || echo "No disponible"
 }
 
 check_license() {
@@ -69,6 +69,7 @@ check_license() {
 check_license
 #________________________________________
 #________________________________________
+
 run_module() {
   local rel="$1"
   local path="$ROOT_DIR/$rel"
@@ -118,12 +119,7 @@ get_system_info() {
     DISTRO="$(uname -rs)"
   fi
 
-  IP_PUBLICA="$(
-    curl -fsS --max-time 2 ifconfig.me 2>/dev/null \
-    || curl -fsS --max-time 2 ipinfo.io/ip 2>/dev/null \
-    || echo "No disponible"
-  )"
-
+  IP_PUBLICA="$(get_public_ip)"
   USUARIO="$(whoami)"
   ZONA_HORARIA="$(timedatectl 2>/dev/null | awk -F': ' '/Time zone/ {print $2}' | awk '{print $1}' || date +%Z)"
 
@@ -150,7 +146,7 @@ show_banner() {
   get_system_info
   show_custom_banner
 
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}" #se agregqn 6 es[...]
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[ ${G}●            SinNombre - VPS Manager v1.0 ●${R} ]${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${R}[${N} ${W}Sistema: ${G}${DISTRO}${N}"
@@ -166,14 +162,14 @@ show_banner() {
 get_systemd_unit_by_pid() {
   local pid="$1"
   [[ -n "${pid:-}" ]] || { echo ""; return 0; }
-  systemctl show -p Unit --value "$pid" 2>/dev/null || echo ""
+  timeout 0.2 systemctl show -p Unit --value "$pid" 2>/dev/null || echo ""
 }
 
 get_proc_pid_by_port() {
   local port="$1"
   local line proc pid
   line="$(
-    ss -H -lntup 2>/dev/null \
+    timeout 0.2 ss -H -lntup 2>/dev/null \
     | awk -v re=":${port}\$" '$5 ~ re {print; exit}' \
     || true
   )"
@@ -188,10 +184,69 @@ get_service_type() {
   local proc="$1"
   local unit="$2"
   if [[ -n "${unit:-}" ]]; then
-    echo "${unit%.service}"  # Nombre exacto del servicio systemd
+    echo "${unit%.service}"
   else
-    echo "$proc"  # Nombre exacto del proceso
+    echo "$proc"
   fi
+}
+
+# Función para obtener puertos reales de configs (paralelizada, timeout 0.2s)
+get_real_ports() {
+  declare -A service_ports
+
+  # Inicializar variables locales para evitar unbound
+  local v2_port="" x_port="" badvpn_port="" udp_port="" squid_port="" stunnel_port="" dropbear_port="" openvpn_port="" wg_port="" ssh_port=""
+
+  # Paralelizar con jobs en background
+  {
+    ssh_port=$(timeout 0.2 grep -E '^Port' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1 || echo "22") &
+    if [[ -f /etc/v2ray/config.json ]] && command -v jq &>/dev/null; then
+      v2_port=$(timeout 0.2 jq -r '.inbounds[0].port // empty' /etc/v2ray/config.json 2>/dev/null || echo "") &
+    fi
+    if [[ -f /usr/local/etc/xray/config.json ]] && command -v jq &>/dev/null; then
+      x_port=$(timeout 0.2 jq -r '.inbounds[0].port // empty' /usr/local/etc/xray/config.json 2>/dev/null || echo "") &
+    fi
+    if systemctl is-active --quiet badvpn-udpgw 2>/dev/null; then
+      badvpn_port=$(timeout 0.2 ps aux | grep badvpn-udpgw | grep -oE ':[0-9]+' | head -1 | sed 's/://' || echo "")
+      [[ -z "$badvpn_port" ]] && badvpn_port=$(timeout 0.2 grep -oE 'port [0-9]+' /etc/badvpn-udpgw.conf 2>/dev/null | awk '{print $2}' || echo "") &
+    fi
+    if [[ -f /root/udp/config.json ]] && command -v jq &>/dev/null; then
+      udp_port=$(timeout 0.2 jq -r '.listen // empty' /root/udp/config.json 2>/dev/null | sed 's/://' || echo "") &
+    fi
+    if systemctl is-active --quiet squid 2>/dev/null || systemctl is-active --quiet squid3 2>/dev/null; then
+      squid_port=$(timeout 0.2 grep -E '^http_port' /etc/squid/squid.conf 2>/dev/null | awk '{print $2}' | head -1 || echo "") &
+    fi
+    if systemctl is-active --quiet stunnel4 2>/dev/null; then
+      stunnel_port=$(timeout 0.2 grep -E '^accept' /etc/stunnel/stunnel.conf 2>/dev/null | awk '{print $2}' | head -1 || echo "") &
+    fi
+    if systemctl is-active --quiet dropbear 2>/dev/null; then
+      dropbear_port=$(timeout 0.2 grep -E '^DROPBEAR_PORT' /etc/default/dropbear 2>/dev/null | awk -F'=' '{print $2}' | head -1 || echo "") &
+    fi
+    if systemctl is-active --quiet openvpn 2>/dev/null; then
+      openvpn_port=$(timeout 0.2 grep -E '^port' /etc/openvpn/server.conf 2>/dev/null | awk '{print $2}' | head -1 || echo "") &
+    fi
+    if ls /etc/wireguard/*.conf &>/dev/null; then
+      wg_port=$(timeout 0.2 grep -hE '^ListenPort' /etc/wireguard/*.conf 2>/dev/null | awk '{print $3}' | head -1 || echo "") &
+    fi
+  } &
+  wait
+
+  # Asignar solo si válidos
+  [[ -n "$ssh_port" ]] && service_ports["sshd"]="$ssh_port"
+  [[ -n "$v2_port" && "$v2_port" != "null" ]] && service_ports["v2ray"]="$v2_port"
+  [[ -n "$x_port" && "$x_port" != "null" ]] && service_ports["xray"]="$x_port"
+  [[ -n "$badvpn_port" ]] && service_ports["badvpn-udpgw"]="$badvpn_port"
+  [[ -n "$udp_port" && "$udp_port" != "null" ]] && service_ports["udp-custom"]="$udp_port"
+  [[ -n "$squid_port" ]] && service_ports["squid"]="$squid_port"
+  [[ -n "$stunnel_port" ]] && service_ports["stunnel"]="$stunnel_port"
+  [[ -n "$dropbear_port" ]] && service_ports["dropbear"]="$dropbear_port"
+  [[ -n "$openvpn_port" ]] && service_ports["openvpn"]="$openvpn_port"
+  [[ -n "$wg_port" ]] && service_ports["wireguard"]="$wg_port"
+
+  # Retornar array
+  for svc in "${!service_ports[@]}"; do
+    echo "$svc:${service_ports[$svc]}"
+  done
 }
 
 show_services_status() {
@@ -199,66 +254,85 @@ show_services_status() {
   echo -e "${W}                   SERVICIOS ACTIVOS${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 
+  # Obtener puertos reales (paralelizado)
+  local real_ports_output
+  real_ports_output="$(get_real_ports)"
+
+  declare -A real_ports
+  while read -r line; do
+    [[ -z "$line" ]] && continue
+    local svc port
+    svc="${line%%:*}"
+    port="${line#*:}"
+    real_ports["$svc"]="$port"
+  done <<< "$real_ports_output"
+
+  # Servicios activos con PID (paralelizado)
+  declare -A active_services
+  while read -r unit pid; do
+    [[ -z "$unit" || -z "$pid" ]] && continue
+    active_services["$unit"]="$pid"
+  done <<< "$(timeout 0.2 systemctl list-units --type=service --state=active --no-pager --no-legend 2>/dev/null | awk '{print $1, $4}' | sed 's/\.service//' || true)"
+
+  # Output de ss (TCP y UDP, paralelizado)
   local lines
-  lines="$(ss -H -lntup 2>/dev/null || true)"
+  lines="$(timeout 0.2 bash -c "ss -H -lntup 2>/dev/null && ss -H -lnup 2>/dev/null" || true)"
 
   declare -A services_ports
 
+  # Procesar líneas de ss y mapear a servicios activos
   while read -r line; do
     [[ -z "$line" ]] && continue
 
-    local port proc pid unit
+    local port proc pid unit is_udp
     port="$(echo "$line" | awk '{print $5}' | awk -F':' '{print $NF}')"
     [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]] && continue
 
     proc="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' || true)"
-
-    # ================= FILTRO V2RAY/XRAY (SOLO TCP) =================
-    if [[ "$proc" =~ ^(v2ray|xray)$ ]]; then
-      # Ignorar cualquier socket UDP de v2ray/xray
-      if echo "$line" | grep -qiE 'udp|UNCONN'; then
-        continue
-      fi
-    fi
-    # ================================================================
-
     pid="$(echo "$line" | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' || true)"
-    unit=""
-    [[ -n "$pid" ]] && unit="$(systemctl show -p Unit --value "$pid" 2>/dev/null || true)"
+    is_udp=$(echo "$line" | grep -q 'udp\|UNCONN' && echo "true" || echo "false")
 
-    local service
-    service="$(get_service_type "$proc" "$unit")"
+    # Mapear a servicio activo por PID
+    local service=""
+    for svc in "${!active_services[@]}"; do
+      if [[ "${active_services[$svc]}" == "$pid" ]]; then
+        service="$svc"
+        break
+      fi
+    done
+    [[ -z "$service" ]] && service="$(get_service_type "$proc" "")"
 
-    # ================= FILTRO PARA MOSTRAR SOLO PUERTOS CONFIGURADOS =================
-    # BadVPN: Solo mostrar el puerto de escucha configurado (ej. 7300), ignorar puertos UDP locales dinámicos
+    # Usar nombre real si disponible
+    [[ -n "${real_ports[$service]:-}" ]] && service="$service"
+
+    # Excluir UDP de V2Ray/XRay
+    if [[ "$is_udp" == "true" && ("$service" =~ ^(v2ray|xray|V2RAY|XRAY)$) ]]; then
+      continue
+    fi
+
+    # Para BadVPN, solo mostrar si el puerto coincide con el real (principal)
     if [[ "$service" == "badvpn-udpgw" ]]; then
-      # Asumir puerto principal 7300; si cambias en config, ajusta aquí
-      if [[ "$port" != "7300" ]]; then
-        continue
+      if [[ -n "${real_ports[$service]:-}" && "$port" != "${real_ports[$service]}" ]]; then
+        continue  # Ignorar puertos dinámicos
       fi
     fi
 
-    # V2Ray/XRay: Solo mostrar el puerto principal configurado (ej. 443), ignorar otros puertos dinámicos
-    if [[ "$service" =~ ^(v2ray|xray|V2RAY|XRAY)$ ]]; then
-      # Asumir puerto principal 443; si cambias en config.json, ajusta aquí o parsea el archivo
-      if [[ "$port" != "443" ]]; then
-        continue
-      fi
-    fi
-    # ==================================================================================
+    # Agregar UDP si no es V2Ray
+    local port_label="$port"
+    [[ "$is_udp" == "true" ]] && port_label="${port}(UDP)"
 
     if [[ -n "${services_ports[$service]:-}" ]]; then
-      if [[ "${services_ports[$service]}" != *"$port"* ]]; then
-        services_ports[$service]="${services_ports[$service]}, $port"
+      if [[ "${services_ports[$service]}" != *"$port_label"* ]]; then
+        services_ports[$service]="${services_ports[$service]}, $port_label"
       fi
     else
-      services_ports[$service]="$port"
+      services_ports[$service]="$port_label"
     fi
   done <<< "$lines"
 
   local count="${#services_ports[@]}"
   if [[ "$count" -eq 0 ]]; then
-    echo -e "${Y}No se encontraron servicios activos${N}"
+    echo -e "${Y}No se encontraron servicios activos con puertos.${N}"
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
     echo ""
     return 0
@@ -269,21 +343,16 @@ show_services_status() {
   local half=$(( (count + 1) / 2 ))
 
   for ((i = 0; i < half; i++)); do
-    # --- COLUMNA 1 ---
     printf "${C}%s${W}: ${G}%s${N}" "${keys[$i]}" "${services_ports[${keys[$i]}]}"
-
     actual_len=$((${#keys[$i]} + ${#services_ports[${keys[$i]}]} + 2))
     spacer=$((30 - actual_len))
     if [ $spacer -gt 0 ]; then
       printf "%${spacer}s" " "
     fi
-
-    # --- COLUMNA 2 ---
     if [[ $((i + half)) -lt count ]]; then
       idx_der=$((i + half))
       printf "${C}%s${W}: ${G}%s${N}" "${keys[$idx_der]}" "${services_ports[${keys[$idx_der]}]}"
     fi
-
     echo ""
   done
 
@@ -346,7 +415,6 @@ main_menu() {
       read -r op
       case "${op:-}" in
         1) run_module "Usuarios/ssh.sh" ;;
-#        2) run_module "Usuarios/xray_users_v2.sh" ;;
         2) run_module "Usuarios/v2ray.sh" ;;
         3) run_module "Protocolos/menu.sh" ;;
         4) run_module "Herramientas/menu.sh" ;;

@@ -163,7 +163,7 @@ read_port_range() {
 
 optimize_udp_speed() {
     echo -e "${W}Optimizando sistema para mejor velocidad UDP...${N}"
-    
+
     # Crear archivo de configuración persistente para sysctl
     cat > /etc/sysctl.d/99-udp-custom.conf <<EOF
 net.core.rmem_max=4194304
@@ -171,10 +171,10 @@ net.core.wmem_max=4194304
 net.core.netdev_max_backlog=250000
 net.core.somaxconn=4096
 EOF
-    
+
     # Aplicar configuración
     sysctl -p /etc/sysctl.d/99-udp-custom.conf >/dev/null 2>&1
-    
+
     echo -e "${G}✓ Optimización completada${N}"
 }
 
