@@ -278,7 +278,7 @@ show_services_status() {
   local lines
   lines="$(timeout 0.2 bash -c "ss -H -lntup 2>/dev/null && ss -H -lnup 2>/dev/null" || true)"
 
-  declare -A services_ports
+  declare -A services_ports=()
 
   # Procesar líneas de ss y mapear a servicios activos
   while read -r line; do
@@ -321,11 +321,11 @@ show_services_status() {
     local port_label="$port"
     [[ "$is_udp" == "true" ]] && port_label="${port}(UDP)"
 
-    if [[ -n "${services_ports[$service]:-}" ]]; then
-      if [[ "${services_ports[$service]}" != *"$port_label"* ]]; then
+    if [[ -n "${service:-}" && -n "${services_ports[$service]:-}" ]]; then
+      if [[ "${services_ports[$service]:-}" != *"$port_label"* ]]; then
         services_ports[$service]="${services_ports[$service]}, $port_label"
       fi
-    else
+    elif [[ -n "${service:-}" ]]; then
       services_ports[$service]="$port_label"
     fi
   done <<< "$lines"
@@ -392,7 +392,7 @@ show_no_v2ray_menu() {
   echo -e "${R}[${Y}99${R}]${N}  ${C}REBOOT VPS${N}                ${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}"
   echo -e "${R}[${Y}101${R}]${N} ${C}ACTUALIZAR SCRIPT${N}         ${R}[${Y}102${R}]${N} ${C}SALIR DE LA VPS${N}"
   echo -e "${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${R}═════════════════��════════ / / / ══════════════════════════${N}"
 }
 
 main_menu() {
@@ -528,7 +528,7 @@ desinstalador_script() {
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${Y}El Script y los servicios añadidos han sido eliminados.${N}"
   echo -e "${W}Puedes cerrar la terminal o reiniciar el VPS.${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${R}══════════════════════════ / / / ═══��══════════════════════${N}"
   exit 0
 }
 
