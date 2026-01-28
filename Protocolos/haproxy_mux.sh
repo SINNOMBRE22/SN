@@ -273,15 +273,38 @@ do_uninstall() {
   require_root
   echo -e "${Y}Deteniendo servicio y limpiando...${N}"
   uninstall_service
-  # intentar restaurar backup de haproxy.cfg si existe
-  local backup
-  backup=$(ls ${HAPROXY_CFG}${BACKUP_SUFFIX}* 2>/dev/null | head -n1 || true)
-  if [[ -n "$backup" ]]; then
-    echo -e "${G}Restaurando backup de haproxy: $backup -> $HAPROXY_CFG${N}"
-    mv -f "$backup" "$HAPROXY_CFG"
+
+  # Eliminar archivos de configuración y backups generados
+  rm -fv "$CONF_JSON"
+  rm -fv "$HAPROXY_CFG"
+  rm -fv /etc/haproxy/haproxy.cfg.sn-orig*
+  rm -fv /var/log/haproxy.log*
+  rm -fv "$SERVICE_PATH"
+  rm -fv /etc/haproxy/haproxy.cfg.sn-orig*
+
+  # Eliminar posibles backups antiguos
+  find /etc/haproxy/ -type f -name "haproxy.cfg.sn-orig*" -exec rm -fv {} \; 2>/dev/null
+
+  # Borra el directorio de configuración SN si está vacío
+  rmdir --ignore-fail-on-non-empty "$CONF_DIR" 2>/dev/null || true
+
+  # Preguntar si borra completamente haproxy, jq e iproute2 del sistema
+  read -r -p "¿Quieres eliminar haproxy, jq y dependencias del sistema? (s/N): " sure
+  if [[ "$sure" =~ ^[sS]$ ]]; then
+    apt-get remove --purge -y haproxy jq iproute2
+    apt-get autoremove --purge -y
   fi
-  rm -f "$CONF_JSON" 2>/dev/null || true
-  echo -e "${G}Desinstalación completada.${N}"
+
+  # Limpiar y recargar servicios systemd
+  systemctl daemon-reload
+  systemctl reset-failed
+
+  # Limpiar logs en el journal si es posible
+  journalctl --user -q --rotate 2>/dev/null || true
+  journalctl --user -q --vacuum-time=1s 2>/dev/null || true
+  journalctl --vacuum-time=1s 2>/dev/null || true
+
+  echo -e "${G}Desinstalación COMPLETA realizada. Ya no queda ningún rastro del servicio haproxy-mux ni su configuración.${N}"
 }
 
 # -------------------------
