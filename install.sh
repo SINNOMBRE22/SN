@@ -2,14 +2,13 @@
 set -euo pipefail
 
 # =========================================================
-# SinNombre - Installer (Con validación NO BLOQUEANTE)
+# SinNombre - Installer (SIN BLOQUEOS - Bash Puro)
 # =========================================================
 
 REPO_OWNER="SINNOMBRE22"
 REPO_NAME="SN"
 REPO_BRANCH="main"
 
-# IP DEL SERVIDOR DEL BOT (cambiar según tu caso)
 VALIDATOR_HOST="${VALIDATOR_HOST:-67.217.244.52}"
 VALIDATOR_PORT="${VALIDATOR_PORT:-12345}"
 
@@ -35,13 +34,13 @@ fail() { echo -e "${R}[FAIL]${N}"; }
 # ============================
 # ROOT CHECK
 # ============================
-[[ "$(id -u)" -ne 0 ]] && {
+if [[ "$(id -u)" -ne 0 ]]; then
   clear
   line
   echo -e "${Y}Ejecuta como root:${N} sudo bash install.sh"
   line
   exit 1
-}
+fi
 
 # ============================
 # INSTALAR DEPENDENCIAS
@@ -53,10 +52,10 @@ install_deps() {
   line
 
   step "Actualizando repositorios"
-  apt-get update -qq && ok || fail
+  apt-get update -qq > /dev/null 2>&1 && ok || fail
 
   step "Herramientas base"
-  apt-get install -y curl git sudo ca-certificates jq > /dev/null 2>&1 && ok || fail
+  apt-get install -y curl git sudo ca-certificates > /dev/null 2>&1 && ok || fail
 
   step "Compresión"
   apt-get install -y zip unzip > /dev/null 2>&1 && ok || fail
@@ -81,13 +80,12 @@ install_deps() {
 }
 
 # ============================
-# VALIDACIÓN DE KEY
+# VALIDACIÓN DE KEY (SIN JQ)
 # ============================
 validate_key() {
   mkdir -p "$LIC_DIR"
   chmod 700 "$LIC_DIR"
 
-  # Si ya existe licencia, continuar
   if [[ -f "$LIC_PATH" ]]; then
     echo -e "${G}Licencia ya activada. Continuando...${N}"
     sleep 1
@@ -102,53 +100,53 @@ validate_key() {
   read -rp "KEY: " KEY
   KEY="$(echo -n "$KEY" | tr -d ' \r\n')"
 
-  [[ "$KEY" == SN-* ]] || {
+  if [[ ! "$KEY" =~ ^SN- ]]; then
     echo -e "${R}Formato inválido${N}"
     exit 1
-  }
+  fi
 
   step "Validando key"
 
-  # Obtener IP del cliente
+  # Obtener IP
   CLIENT_IP="${SSH_CLIENT%% *}"
-  [[ -z "$CLIENT_IP" ]] && CLIENT_IP=$(hostname -I | awk '{print $1}')
+  if [[ -z "$CLIENT_IP" ]]; then
+    CLIENT_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+  fi
+  [[ -z "$CLIENT_IP" ]] && CLIENT_IP="127.0.0.1"
 
   # Crear payload
   PAYLOAD="{\"key\":\"$KEY\",\"ip\":\"$CLIENT_IP\"}"
 
-  # Validar CON TIMEOUT CORTO (no bloquea más de 3 segundos)
-  # Si falla, continúa de todas formas
-  RESP=$(timeout 3 curl -s -X POST \
+  # Validar CON TIMEOUT CORTO
+  RESP=$(timeout 2 curl -s -X POST \
     "http://${VALIDATOR_HOST}:${VALIDATOR_PORT}/consume" \
     -H "Content-Type: application/json" \
-    -d "$PAYLOAD" 2>/dev/null || echo "{\"ok\":false}")
+    -d "$PAYLOAD" 2>&1 || echo "")
 
-  # Verificar respuesta
-  if echo "$RESP" | jq . > /dev/null 2>&1; then
-    OK=$(echo "$RESP" | jq -r '.ok // false')
-  else
-    OK="false"
-  fi
-
-  if [[ "$OK" == "true" ]]; then
+  # Verificar si contiene "ok": true (bash puro)
+  if echo "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
     ok
     echo "activated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$LIC_PATH"
     chmod 600 "$LIC_PATH"
+    echo -e "${G}✅ Key validada correctamente${N}"
+    sleep 1
   else
-    # Si falla la validación, guardar key igual (validación asíncrona)
+    # Si falla, CONTINUAR DE TODAS FORMAS
     ok
     echo "activated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$LIC_PATH"
     echo "key=$KEY" >> "$LIC_PATH"
     chmod 600 "$LIC_PATH"
     
-    echo -e "${Y}⚠️  Validación en segundo plano...${N}"
-    # Validar async sin bloquear
+    echo -e "${Y}⚠️ Validación en background (no bloquea instalación)${N}"
+    
+    # Validar en background sin bloquear
     (
       sleep 1
       curl -s -X POST "http://${VALIDATOR_HOST}:${VALIDATOR_PORT}/consume" \
         -H "Content-Type: application/json" \
-        -d "$PAYLOAD" > /dev/null 2>&1
+        -d "$PAYLOAD" >> /tmp/sn-validation.log 2>&1 &
     ) &
+    disown 2>/dev/null || true
   fi
 }
 
@@ -163,26 +161,39 @@ install_panel() {
 
   step "Clonando repositorio"
   rm -rf "$INSTALL_DIR"
-  git clone --depth 1 -b "$REPO_BRANCH" \
+  if git clone --depth 1 -b "$REPO_BRANCH" \
     "https://github.com/$REPO_OWNER/$REPO_NAME.git" \
-    "$INSTALL_DIR" > /dev/null 2>&1 && ok || fail
+    "$INSTALL_DIR" > /dev/null 2>&1; then
+    ok
+  else
+    fail
+    echo -e "${Y}Continuando sin panel...${N}"
+  fi
 
   step "Asignando permisos"
-  chmod +x "$INSTALL_DIR/menu" 2>/dev/null
+  if [[ -f "$INSTALL_DIR/menu" ]]; then
+    chmod +x "$INSTALL_DIR/menu"
+  fi
   find "$INSTALL_DIR" -name "*.sh" -exec chmod +x {} \; 2>/dev/null
   ok
 
   step "Creando comandos globales"
 
-  cat > /usr/local/bin/sn <<CMDEOF
+  cat > /usr/local/bin/sn << 'CMDEOF'
 #!/usr/bin/env bash
-[[ \$(id -u) -eq 0 ]] || { echo "Usa sudo"; exit 1; }
-[[ -f $LIC_PATH ]] || { echo "Licencia no encontrada"; exit 1; }
-exec $INSTALL_DIR/menu "\$@"
+if [[ $(id -u) -ne 0 ]]; then
+  echo "Usa sudo"
+  exit 1
+fi
+if [[ ! -f /etc/.sn/lic ]]; then
+  echo "Licencia no encontrada"
+  exit 1
+fi
+exec /etc/SN/menu "$@"
 CMDEOF
 
   chmod +x /usr/local/bin/sn
-  ln -sf /usr/local/bin/sn /usr/local/bin/menu
+  ln -sf /usr/local/bin/sn /usr/local/bin/menu 2>/dev/null
   ok
 }
 
@@ -195,7 +206,8 @@ install_banner() {
   touch /root/.hushlogin
   chmod 600 /root/.hushlogin
 
-  grep -q "SinNombre - Welcome banner" /root/.bashrc 2>/dev/null || cat >> /root/.bashrc <<'BANNEREOF'
+  if ! grep -q "SinNombre - Welcome banner" /root/.bashrc 2>/dev/null; then
+    cat >> /root/.bashrc << 'BANNEREOF'
 
 # ============================
 # SinNombre - Welcome banner
@@ -215,6 +227,7 @@ if [[ $- == *i* ]]; then
   echo ""
 fi
 BANNEREOF
+  fi
 
   ok
 }
