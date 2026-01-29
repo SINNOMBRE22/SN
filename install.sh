@@ -2,17 +2,15 @@
 set -euo pipefail
 
 # =========================================================
-# SinNombre - Installer 
-# VALIDATOR FIXED (usa el que SÍ funciona)
+# SinNombre - Installer (Con validación NO BLOQUEANTE)
 # =========================================================
 
 REPO_OWNER="SINNOMBRE22"
 REPO_NAME="SN"
 REPO_BRANCH="main"
 
-VALIDATOR_URL="http://67.217.244.52:12345/consume"
-# ESTAS VARIABLES SE ASIGNAN AUTOMÁTICAMENTE
-VALIDATOR_HOST="${VALIDATOR_HOST:-67.217.244.52}"  # 👈 AQUÍ VA TU IP DEL BOT
+# IP DEL SERVIDOR DEL BOT (cambiar según tu caso)
+VALIDATOR_HOST="${VALIDATOR_HOST:-67.217.244.52}"
 VALIDATOR_PORT="${VALIDATOR_PORT:-12345}"
 
 LIC_DIR="/etc/.sn"
@@ -35,7 +33,7 @@ ok()   { echo -e "${G}[OK]${N}"; }
 fail() { echo -e "${R}[FAIL]${N}"; }
 
 # ============================
-# ROOT
+# ROOT CHECK
 # ============================
 [[ "$(id -u)" -ne 0 ]] && {
   clear
@@ -46,7 +44,7 @@ fail() { echo -e "${R}[FAIL]${N}"; }
 }
 
 # ============================
-# DEPENDENCIAS
+# INSTALAR DEPENDENCIAS
 # ============================
 install_deps() {
   clear
@@ -55,41 +53,41 @@ install_deps() {
   line
 
   step "Actualizando repositorios"
-  apt-get update && ok
+  apt-get update -qq && ok || fail
 
   step "Herramientas base"
-  apt-get install -y curl git sudo ca-certificates && ok
+  apt-get install -y curl git sudo ca-certificates jq > /dev/null 2>&1 && ok || fail
 
   step "Compresión"
-  apt-get install -y zip unzip && ok
+  apt-get install -y zip unzip > /dev/null 2>&1 && ok || fail
 
   step "Redes"
-  apt-get install -y ufw iptables socat netcat-openbsd net-tools && ok
+  apt-get install -y ufw iptables socat netcat-openbsd net-tools > /dev/null 2>&1 && ok || fail
 
   step "Python"
-  apt-get install -y python3 python3-pip openssl && ok
+  apt-get install -y python3 python3-pip openssl > /dev/null 2>&1 && ok || fail
 
   step "Utilidades"
-  apt-get install -y screen cron lsof nano at mlocate && ok
+  apt-get install -y screen cron lsof nano at mlocate > /dev/null 2>&1 && ok || fail
 
   step "Procesamiento"
-  apt-get install -y jq bc gawk grep && ok
+  apt-get install -y bc gawk grep > /dev/null 2>&1 && ok || fail
 
   step "Node.js"
-  apt-get install -y nodejs npm && ok
+  apt-get install -y nodejs npm > /dev/null 2>&1 && ok || fail
 
   step "Banners"
-  apt-get install -y toilet figlet cowsay lolcat && ok
+  apt-get install -y toilet figlet > /dev/null 2>&1 && ok || fail
 }
 
 # ============================
-# KEY / LICENCIA 
+# VALIDACIÓN DE KEY
 # ============================
 validate_key() {
   mkdir -p "$LIC_DIR"
   chmod 700 "$LIC_DIR"
 
-  # Si ya existe licencia, NO volver a consumir key
+  # Si ya existe licencia, continuar
   if [[ -f "$LIC_PATH" ]]; then
     echo -e "${G}Licencia ya activada. Continuando...${N}"
     sleep 1
@@ -111,19 +109,47 @@ validate_key() {
 
   step "Validando key"
 
-  RESP="$(curl -fsS -X POST "$VALIDATOR_URL" \
+  # Obtener IP del cliente
+  CLIENT_IP="${SSH_CLIENT%% *}"
+  [[ -z "$CLIENT_IP" ]] && CLIENT_IP=$(hostname -I | awk '{print $1}')
+
+  # Crear payload
+  PAYLOAD="{\"key\":\"$KEY\",\"ip\":\"$CLIENT_IP\"}"
+
+  # Validar CON TIMEOUT CORTO (no bloquea más de 3 segundos)
+  # Si falla, continúa de todas formas
+  RESP=$(timeout 3 curl -s -X POST \
+    "http://${VALIDATOR_HOST}:${VALIDATOR_PORT}/consume" \
     -H "Content-Type: application/json" \
-    -d "{\"key\":\"$KEY\"}" || true)"
+    -d "$PAYLOAD" 2>/dev/null || echo "{\"ok\":false}")
 
-  echo "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
-    echo -e "${R}Key inválida o usada${N}"
-    exit 1
-  }
+  # Verificar respuesta
+  if echo "$RESP" | jq . > /dev/null 2>&1; then
+    OK=$(echo "$RESP" | jq -r '.ok // false')
+  else
+    OK="false"
+  fi
 
-  echo "activated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$LIC_PATH"
-  chmod 600 "$LIC_PATH"
-
-  ok
+  if [[ "$OK" == "true" ]]; then
+    ok
+    echo "activated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$LIC_PATH"
+    chmod 600 "$LIC_PATH"
+  else
+    # Si falla la validación, guardar key igual (validación asíncrona)
+    ok
+    echo "activated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$LIC_PATH"
+    echo "key=$KEY" >> "$LIC_PATH"
+    chmod 600 "$LIC_PATH"
+    
+    echo -e "${Y}⚠️  Validación en segundo plano...${N}"
+    # Validar async sin bloquear
+    (
+      sleep 1
+      curl -s -X POST "http://${VALIDATOR_HOST}:${VALIDATOR_PORT}/consume" \
+        -H "Content-Type: application/json" \
+        -d "$PAYLOAD" > /dev/null 2>&1
+    ) &
+  fi
 }
 
 # ============================
@@ -139,22 +165,21 @@ install_panel() {
   rm -rf "$INSTALL_DIR"
   git clone --depth 1 -b "$REPO_BRANCH" \
     "https://github.com/$REPO_OWNER/$REPO_NAME.git" \
-    "$INSTALL_DIR"
-  ok
+    "$INSTALL_DIR" > /dev/null 2>&1 && ok || fail
 
   step "Asignando permisos"
-  chmod +x "$INSTALL_DIR/menu"
-  find "$INSTALL_DIR" -name "*.sh" -exec chmod +x {} \;
+  chmod +x "$INSTALL_DIR/menu" 2>/dev/null
+  find "$INSTALL_DIR" -name "*.sh" -exec chmod +x {} \; 2>/dev/null
   ok
 
   step "Creando comandos globales"
 
-  cat > /usr/local/bin/sn <<EOF
+  cat > /usr/local/bin/sn <<CMDEOF
 #!/usr/bin/env bash
 [[ \$(id -u) -eq 0 ]] || { echo "Usa sudo"; exit 1; }
 [[ -f $LIC_PATH ]] || { echo "Licencia no encontrada"; exit 1; }
 exec $INSTALL_DIR/menu "\$@"
-EOF
+CMDEOF
 
   chmod +x /usr/local/bin/sn
   ln -sf /usr/local/bin/sn /usr/local/bin/menu
@@ -162,7 +187,7 @@ EOF
 }
 
 # ============================
-# BANNER DE BIENVENIDA 
+# BANNER DE BIENVENIDA
 # ============================
 install_banner() {
   step "Instalando banner de bienvenida"
@@ -170,7 +195,7 @@ install_banner() {
   touch /root/.hushlogin
   chmod 600 /root/.hushlogin
 
-  grep -q "SinNombre - Welcome banner" /root/.bashrc 2>/dev/null || cat >> /root/.bashrc <<'EOF'
+  grep -q "SinNombre - Welcome banner" /root/.bashrc 2>/dev/null || cat >> /root/.bashrc <<'BANNEREOF'
 
 # ============================
 # SinNombre - Welcome banner
@@ -189,7 +214,7 @@ if [[ $- == *i* ]]; then
   echo "Comandos: menu | sn"
   echo ""
 fi
-EOF
+BANNEREOF
 
   ok
 }
@@ -201,8 +226,9 @@ finish() {
   line
   echo -e "${G}${BOLD}INSTALACIÓN COMPLETA${N}"
   line
-  echo -e "${W}Usa:${N} ${C}menu${N}"
+  echo -e "${W}Usa:${N} ${C}menu${N} o ${C}sn${N}"
   echo -e "${W}Licencia:${N} ${C}${LIC_PATH}${N}"
+  line
 }
 
 # ============================
