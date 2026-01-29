@@ -108,9 +108,10 @@ validate_key() {
 
   step "Validando key"
 
-  RESP="$(curl -fsS -X POST "$VALIDATOR_URL" \
-    -H "Content-Type: application/json" \
-    -d "{\"key\":\"$KEY\"}" || true)"
+  RESP="$(curl --connect-timeout 5 --max-time 10 -sS \
+  -X POST "$VALIDATOR_URL" \
+  -H "Content-Type: application/json" \
+  -d "{\"key\":\"$KEY\"}")"
 
   echo "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
     echo -e "${R}Key inválida o usada${N}"
