@@ -86,6 +86,7 @@ validate_key() {
   mkdir -p "$LIC_DIR"
   chmod 700 "$LIC_DIR"
 
+  # Si ya existe licencia, NO volver a consumir key
   if [[ -f "$LIC_PATH" ]]; then
     echo -e "${G}Licencia ya activada. Continuando...${N}"
     sleep 1
@@ -107,14 +108,12 @@ validate_key() {
 
   step "Validando key"
 
-  RESP="$(curl -fsS --connect-timeout 5 --max-time 10 \
+  RESP="$(curl -fsS -X POST "$VALIDATOR_URL" \
     -H "Content-Type: application/json" \
-    -X POST \
-    -d "{\"key\":\"$KEY\"}" \
-    "$VALIDATOR_URL" || true)"
+    -d "{\"key\":\"$KEY\"}" || true)"
 
-  echo "$RESP" | jq -e '.ok == true' >/dev/null 2>&1 || {
-    echo -e "${R}Key inválida, usada o API no disponible${N}"
+  echo "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
+    echo -e "${R}Key inválida o usada${N}"
     exit 1
   }
 
@@ -123,6 +122,7 @@ validate_key() {
 
   ok
 }
+
 # ============================
 # INSTALAR PANEL
 # ============================
