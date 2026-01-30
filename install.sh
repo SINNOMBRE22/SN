@@ -98,24 +98,40 @@ validate_key() {
   echo -e "${Y}${BOLD}ACTIVACIÓN DE LICENCIA${N}"
   line
 
-  read -rp "KEY: " KEY
-  KEY="$(echo -n "$KEY" | tr -d ' \r\n')"
+  # Ciclo seguro: pide hasta tener patrón válido
+  while :; do
+    read -rp "KEY: " KEY
+    KEY="$(echo -n "$KEY" | tr -d ' \r\n')"
 
-  [[ "$KEY" == SN-* ]] || {
-    echo -e "${R}Formato inválido${N}"
-    exit 1
-  }
+    # Valida: debe empezar por SN- y tener mínimo 10 letras/números más
+    if [[ ! "$KEY" =~ ^SN-[a-zA-Z0-9]{10,}$ ]]; then
+      echo -e "${R}Formato inválido. Debe empezar con SN- y tener mínimo 10 caract. alfanuméricos.${N}"
+      continue
+    fi
+    break
+  done
 
   step "Validando key"
-
-  RESP="$(curl -fsS -X POST "$VALIDATOR_URL" \
+  set +e
+  RESP=$(curl -fsSL -X POST "$VALIDATOR_URL" \
     -H "Content-Type: application/json" \
-    -d "{\"key\":\"$KEY\"}" || true)"
+    -d "{\"key\":\"$KEY\"}" 2>/dev/null)
+  CODE=$?
+  set -e
 
-  echo "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
-    echo -e "${R}Key inválida o usada${N}"
-    exit 1
-  }
+  if [[ $CODE -ne 0 || -z "$RESP" ]]; then
+    echo -e "${R}Error de conexión al servidor de licencias.${N}"
+    exit 2
+  fi
+
+  # Debe tener "ok": true en JSON
+  OK=$(echo "$RESP" | grep -o '"ok"[[:space:]]*:[[:space:]]*true')
+  if [[ -z "$OK" ]]; then
+    MSG=$(echo "$RESP" | grep -o '"error"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
+    [ -z "$MSG" ] && MSG="$(echo "$RESP" | cut -c1-120) ..."
+    echo -e "${R}Key inválida. Detalle: $MSG${N}"
+    exit 3
+  fi
 
   echo "activated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$LIC_PATH"
   chmod 600 "$LIC_PATH"
