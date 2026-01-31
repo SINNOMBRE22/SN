@@ -215,7 +215,7 @@ finish() {
   echo -e "${G}${BOLD}INSTALACIÓN COMPLETA${N}"
   line
   echo -e "${W}Usa:${N} ${C}menu${N}"
-  echo -e "${W}Licencia:${N} ${C}${LIC_PATH}${N}"
+#  echo -e "${W}Licencia:${N} ${C}${LIC_PATH}${N}"
 }
 
 # ============================
