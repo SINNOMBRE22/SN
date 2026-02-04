@@ -205,7 +205,7 @@ if [[ $- == *i* ]]; then
     # Función para centrar texto
     center() {
         local text="$1"
-        local width="${2:-80}"
+        local width="${2:-50}"
         local padding=$(( (width - ${#text}) / 2 ))
         printf "%${padding}s%s%${padding}s\n" "" "$text" ""
     }
@@ -240,7 +240,7 @@ if [[ $- == *i* ]]; then
     fi
     
     # Línea decorativa
-    echo -e "${BLUE}$(printf '%.0s═' $(seq 1 $(tput cols 2>/dev/null || echo 60)))${RESET}"
+    echo -e "${BLUE}$(printf '%.0s═' $(seq 1 $(tput cols 2>/dev/null || echo 50)))${RESET}"
     
     # Información del sistema
     echo -e "${BOLD}${YELLOW}💻  Sistema:${RESET} ${WHITE}${OS_INFO}${RESET}"
@@ -250,7 +250,7 @@ if [[ $- == *i* ]]; then
     echo -e "${BOLD}${YELLOW}🐚  Shell:${RESET} ${RED}${SHELL_INFO}${RESET}"
     
     # Línea decorativa
-    echo -e "${BLUE}$(printf '%.0s═' $(seq 1 $(tput cols 2>/dev/null || echo 60)))${RESET}"
+    echo -e "${BLUE}$(printf '%.0s═' $(seq 1 $(tput cols 2>/dev/null || echo 50)))${RESET}"
     
     # Comandos disponibles
     echo -e "${BOLD}${WHITE}Comandos disponibles:${RESET}"
