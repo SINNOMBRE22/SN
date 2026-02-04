@@ -175,14 +175,12 @@ EOF
 }
 
 # ============================
-# BANNER DE BIENVENIDA MEJORADO
+# BANNER DE BIENVENIDA ACTUALIZADO
 # ============================
 install_banner() {
   step "Instalando banner de bienvenida mejorado"
 
   # Reemplazar cualquier banner anterior
-  touch /root/.hushlogin
-  chmod 600 /root/.hushlogin
   sed -i '/SinNombre - Welcome banner/,/^fi$/d' /root/.bashrc 2>/dev/null || true
 
   # Agregar el banner actualizado
@@ -197,7 +195,6 @@ if [[ $- == *i* ]]; then
     
     clear
     
-    # Definir colores (ANSI escape codes)
     RED='\033[0;31m'
     GREEN='\033[0;32m'
     YELLOW='\033[1;33m'
@@ -206,7 +203,6 @@ if [[ $- == *i* ]]; then
     BOLD='\033[1m'
     RESET='\033[0m'
     
-    # Función para centrar texto
     center() {
         local text="$1"
         local width="${2:-80}"
@@ -214,15 +210,20 @@ if [[ $- == *i* ]]; then
         printf "%${padding}s%s%${padding}s\n" "" "$text" ""
     }
     
-    # Información del sistema
+    USER_INFO="${USER}@$(hostname)"
+    OS_INFO="$(grep '^PRETTY_NAME' /etc/os-release | cut -d= -f2 | tr -d '"')"
+    UPTIME="$(uptime -p | sed 's/up //')"
+
     echo -e "${CYAN}"
     center "╔════════════════════════════════╗"
-    center "║     ¡Bienvenido a SinNombre!   ║"
+    center "║     Bienvenido a SinNombre     ║"
     center "╚════════════════════════════════╝"
     echo -e "${RESET}"
-    echo -e "${BOLD}${YELLOW}💻 System:${RESET} Ubuntu Linux"
-    echo -e "Commands: ${GREEN}sn${RESET} | ${GREEN}menu${RESET}"
-    echo
+    echo -e "${YELLOW}💻 Sistema:${RESET} ${WHITE}${OS_INFO}${RESET}"
+    echo -e "${YELLOW}👤 Usuario:${RESET} ${GREEN}${USER_INFO}${RESET}"
+    echo -e "${YELLOW}⏱️  Uptime:${RESET} ${CYAN}${UPTIME}${RESET}"
+    echo -e "${YELLOW}📜 Comandos:${RESET} ${GREEN}sn${RESET}, ${GREEN}menu${RESET}"
+    echo ""
 fi
 EOF
 
@@ -230,17 +231,17 @@ EOF
 }
 
 # ============================
-# FIN
+# FINALIZAR 
 # ============================
 finish() {
   line
   echo -e "${G}${BOLD}INSTALACIÓN COMPLETA${N}"
   line
-  echo -e "${W}Reinicia la sesión para aplicar los cambios.${N}"
+  echo -e "${W}Reinicia la sesión SSH para aplicar los cambios.${N}"
 }
 
 # ============================
-# FLUJO PRINCIPAL
+# EJECUCIÓN
 # ============================
 install_deps
 validate_key
