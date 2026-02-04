@@ -3,14 +3,12 @@ set -euo pipefail
 
 # =========================================================
 # SinNombre - Installer 
-# VALIDATOR FIXED (usa el que SÍ funciona)
+# KEY AUTO-GENERADA (SIN VALIDACIÓN)
 # =========================================================
 
 REPO_OWNER="SINNOMBRE22"
 REPO_NAME="SN"
 REPO_BRANCH="main"
-
-VALIDATOR_URL="http://67.217.244.52:8888/consume" 
 
 LIC_DIR="/etc/.sn"
 LIC_PATH="$LIC_DIR/lic"
@@ -80,62 +78,34 @@ install_deps() {
 }
 
 # ============================
-# KEY / LICENCIA 
+# LICENCIA (AUTO)
 # ============================
-validate_key() {
+generate_license() {
   mkdir -p "$LIC_DIR"
   chmod 700 "$LIC_DIR"
 
-  # Si ya existe licencia, NO volver a consumir key
   if [[ -f "$LIC_PATH" ]]; then
-    echo -e "${G}Licencia ya activada. Continuando...${N}"
+    echo -e "${G}Licencia ya existe. Continuando...${N}"
     sleep 1
     return 0
   fi
 
   clear
   line
-  echo -e "${Y}${BOLD}ACTIVACIÓN DE LICENCIA${N}"
+  echo -e "${Y}${BOLD}GENERANDO LICENCIA${N}"
   line
 
-  # Ciclo seguro: pide hasta tener patrón válido
-  while :; do
-    read -rp "KEY: " KEY
-    KEY="$(echo -n "$KEY" | tr -d ' \r\n')"
+  step "Creando key interna"
 
-    # Valida: debe empezar por SN- y tener mínimo 10 letras/números más
-    if [[ ! "$KEY" =~ ^SN-[a-zA-Z0-9]{10,}$ ]]; then
-      echo -e "${R}Formato inválido. Debe empezar con SN- y tener mínimo 10 caract. alfanuméricos.${N}"
-      continue
-    fi
-    break
-  done
+  RAND="$(openssl rand -hex 6 | tr 'a-f' 'A-F')"
+  KEY="SN-$RAND"
 
-  step "Validando key"
-  set +e
-  RESP=$(curl -fsSL -X POST "$VALIDATOR_URL" \
-    -H "Content-Type: application/json" \
-    -d "{\"key\":\"$KEY\"}" 2>/dev/null)
-  CODE=$?
-  set -e
+  cat > "$LIC_PATH" <<EOF
+key=$KEY
+activated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+EOF
 
-  if [[ $CODE -ne 0 || -z "$RESP" ]]; then
-    echo -e "${R}Error de conexión al servidor de licencias.${N}"
-    exit 2
-  fi
-
-  # Debe tener "ok": true en JSON
-  OK=$(echo "$RESP" | grep -o '"ok"[[:space:]]*:[[:space:]]*true')
-  if [[ -z "$OK" ]]; then
-    MSG=$(echo "$RESP" | grep -o '"error"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
-    [ -z "$MSG" ] && MSG="$(echo "$RESP" | cut -c1-120) ..."
-    echo -e "${R}Key inválida. Detalle: $MSG${N}"
-    exit 3
-  fi
-
-  echo "activated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$LIC_PATH"
   chmod 600 "$LIC_PATH"
-
   ok
 }
 
@@ -215,14 +185,14 @@ finish() {
   echo -e "${G}${BOLD}INSTALACIÓN COMPLETA${N}"
   line
   echo -e "${W}Usa:${N} ${C}menu${N}"
-#  echo -e "${W}Licencia:${N} ${C}${LIC_PATH}${N}"
+  echo -e "${W}Licencia:${N} ${C}${LIC_PATH}${N}"
 }
 
 # ============================
 # EJECUCIÓN
 # ============================
 install_deps
-validate_key
+generate_license
 install_panel
 install_banner
 finish
