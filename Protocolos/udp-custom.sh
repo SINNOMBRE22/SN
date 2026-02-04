@@ -30,6 +30,7 @@ UDP_BIN="$CONFIG_DIR/udp-custom"
 
 DEFAULT_UDP_PORT=36712
 DEFAULT_PORT_RANGE="1-65535"
+FD_LIMIT=1048576
 
 # -------------------------------
 # Funciones mejoradas
@@ -55,9 +56,6 @@ count_ssh_users() {
 count_udp_connections() {
     local port
     port="$(get_udp_port)"
-
-    # Buscar conexiones UDP en el puerto especificado
-    # Esta versión busca tanto udp-custom como badvpn-udpgw
     ss -u -a 2>/dev/null | grep -E ":$port\b" | wc -l
 }
 
@@ -65,13 +63,9 @@ get_udp_process() {
     local port
     port="$(get_udp_port)"
 
-    # Verificar qué proceso está usando el puerto
     if ss -ulpn 2>/dev/null | grep -q ":$port\b"; then
-        # Buscar el nombre del proceso
         local process_info
         process_info=$(ss -ulpn 2>/dev/null | grep ":$port\b" | awk '{print $6}')
-
-        # Extraer nombre del proceso
         if echo "$process_info" | grep -q "badvpn-udpgw"; then
             echo "badvpn-udpgw"
         elif echo "$process_info" | grep -q "udp-custom"; then
@@ -87,23 +81,18 @@ get_udp_process() {
 }
 
 is_udp_installed() {
-    # Verificar si UDP-Custom está instalado
     [[ -x "$UDP_BIN" ]] && [[ -f "$CONFIG_FILE" ]] && [[ -f "$SERVICE_FILE" ]]
 }
 
 get_udp_port() {
     if [[ -f "$CONFIG_FILE" ]]; then
-        # Intentar leer el puerto desde config.json
         local port
         port=$(jq -r '.listen // empty' "$CONFIG_FILE" 2>/dev/null | sed 's/://')
-
         if [[ -n "$port" ]] && [[ "$port" != "null" ]]; then
             echo "$port"
             return
         fi
     fi
-
-    # Valor por defecto
     echo "$DEFAULT_UDP_PORT"
 }
 
@@ -111,27 +100,21 @@ get_port_range() {
     if [[ -f "$CONFIG_FILE" ]]; then
         local range
         range=$(jq -r '.port_range // empty' "$CONFIG_FILE" 2>/dev/null)
-
         if [[ -n "$range" ]] && [[ "$range" != "null" ]]; then
             echo "$range"
             return
         fi
     fi
-
     echo "$DEFAULT_PORT_RANGE"
 }
 
 read_port() {
     while true; do
         read -p "Ingrese puerto UDP (default $DEFAULT_UDP_PORT): " user_port
-
-        # Si está vacío, usar default
         if [[ -z "$user_port" ]]; then
             echo "$DEFAULT_UDP_PORT"
             return
         fi
-
-        # Validar que sea un número válido
         if [[ "$user_port" =~ ^[0-9]+$ ]] && (( user_port >= 1 && user_port <= 65535 )); then
             echo "$user_port"
             return
@@ -144,14 +127,10 @@ read_port() {
 read_port_range() {
     while true; do
         read -p "Ingrese rango de puertos (default $DEFAULT_PORT_RANGE): " user_range
-
-        # Si está vacío, usar default
         if [[ -z "$user_range" ]]; then
             echo "$DEFAULT_PORT_RANGE"
             return
         fi
-
-        # Validar formato del rango
         if [[ "$user_range" =~ ^[0-9]+-[0-9]+$ ]]; then
             echo "$user_range"
             return
@@ -163,18 +142,19 @@ read_port_range() {
 
 optimize_udp_speed() {
     echo -e "${W}Optimizando sistema para mejor velocidad UDP...${N}"
-
-    # Crear archivo de configuración persistente para sysctl
     cat > /etc/sysctl.d/99-udp-custom.conf <<EOF
-net.core.rmem_max=4194304
-net.core.wmem_max=4194304
-net.core.netdev_max_backlog=250000
-net.core.somaxconn=4096
+net.core.rmem_max=33554432
+net.core.wmem_max=33554432
+net.core.rmem_default=8388608
+net.core.wmem_default=8388608
+net.core.netdev_max_backlog=500000
+net.core.somaxconn=8192
+net.ipv4.ip_local_port_range=1024 65535
+net.ipv4.udp_mem=4096 87380 33554432
+net.ipv4.udp_rmem_min=131072
+net.ipv4.udp_wmem_min=131072
 EOF
-
-    # Aplicar configuración
     sysctl -p /etc/sysctl.d/99-udp-custom.conf >/dev/null 2>&1
-
     echo -e "${G}✓ Optimización completada${N}"
 }
 
@@ -184,8 +164,8 @@ create_config() {
 {
   "listen": ":$DEFAULT_UDP_PORT",
   "port_range": "$DEFAULT_PORT_RANGE",
-  "stream_buffer": 4194304,
-  "receive_buffer": 8388608,
+  "stream_buffer": 16777216,
+  "receive_buffer": 33554432,
   "auth": {
     "mode": "passwords"
   }
@@ -206,16 +186,29 @@ validate_repair_config() {
     fi
 }
 
+wait_for_port() {
+    local port="$1"
+    for _ in {1..15}; do
+        if ss -ulpn 2>/dev/null | grep -q ":$port\b"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
 restart_udp_custom() {
     echo -e "${Y}Reiniciando servicio UDP-Custom...${N}"
     systemctl daemon-reload 2>/dev/null
     systemctl restart "$SERVICE_NAME" 2>/dev/null
-    sleep 2
+    sleep 1
 
-    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-        echo -e "${G}✓ Servicio reiniciado correctamente${N}"
+    local port
+    port="$(get_udp_port)"
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && wait_for_port "$port"; then
+        echo -e "${G}✓ Servicio reiniciado y puerto $port escuchando${N}"
     else
-        echo -e "${R}✗ Error al reiniciar el servicio${N}"
+        echo -e "${R}✗ Error al reiniciar o puerto no disponible${N}"
     fi
 }
 
@@ -231,60 +224,72 @@ toggle_service() {
     else
         echo -e "${Y}Iniciando servicio...${N}"
         systemctl start "$SERVICE_NAME" 2>/dev/null
-        sleep 2
-        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-            echo -e "${G}✓ Servicio iniciado${N}"
+        sleep 1
+        local port
+        port="$(get_udp_port)"
+        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && wait_for_port "$port"; then
+            echo -e "${G}✓ Servicio iniciado y puerto $port listo${N}"
         else
-            echo -e "${R}✗ Error al iniciar el servicio${N}"
+            echo -e "${R}✗ Error al iniciar o puerto no disponible${N}"
         fi
     fi
 }
 
+ensure_dependencies() {
+    local missing=()
+    for bin in jq curl ss wget netstat; do
+        command -v "$bin" >/dev/null 2>&1 || missing+=("$bin")
+    done
+    if ((${#missing[@]})); then
+        echo -e "${W}Instalando dependencias: ${Y}${missing[*]}${N}"
+        apt update -y >/dev/null 2>&1
+        apt install -y "${missing[@]}" net-tools >/dev/null 2>&1
+    fi
+}
+
+download_udp_custom() {
+    if [[ -x "$UDP_BIN" ]]; then
+        return 0
+    fi
+    echo -e "${W}Descargando UDP-Custom...${N}"
+    if wget -q -O "$UDP_BIN" "https://github.com/http-custom/udpcustom/raw/main/folder/udp-custom-linux-amd64.bin"; then
+        chmod +x "$UDP_BIN"
+        echo -e "${G}✓ UDP-Custom descargado${N}"
+        return 0
+    fi
+    if curl -fsSL -o "$UDP_BIN" "https://github.com/http-custom/udpcustom/raw/main/folder/udp-custom-linux-amd64.bin"; then
+        chmod +x "$UDP_BIN"
+        echo -e "${G}✓ UDP-Custom descargado (curl fallback)${N}"
+        return 0
+    fi
+    echo -e "${R}✗ Error al descargar UDP-Custom${N}"
+    read -r -p "Presiona Enter para continuar..."
+    return 1
+}
+
 install_udp_custom() {
     clear
-    echo -e "${R}═══════════════════════���══ / / / ══════════════════════════${N}"
-    echo -e "${Y}          INSTALANDO UDP-CUSTOM${N}"
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    echo -e "${Y}          INSTALANDO UDP-CUSTOM${N}"
+    echo -e "${R}══════════════��═══════════ / / / ══════════════════════════${N}"
 
-    # Actualizar e instalar dependencias
-    echo -e "${W}Actualizando sistema...${N}"
-    apt update -y >/dev/null 2>&1
-    apt install -y wget jq curl net-tools >/dev/null 2>&1
-
-    # Crear directorio
+    ensure_dependencies
     mkdir -p "$CONFIG_DIR"
 
-    # Descargar UDP-Custom
-    echo -e "${W}Descargando UDP-Custom...${N}"
-    if [[ ! -x "$UDP_BIN" ]]; then
-        wget -q -O "$UDP_BIN" "https://github.com/http-custom/udpcustom/raw/main/folder/udp-custom-linux-amd64.bin"
-        if [[ $? -eq 0 ]]; then
-            chmod +x "$UDP_BIN"
-            echo -e "${G}✓ UDP-Custom descargado${N}"
-        else
-            echo -e "${R}✗ Error al descargar UDP-Custom${N}"
-            read -r -p "Presiona Enter para continuar..."
-            return
-        fi
-    fi
+    download_udp_custom || return
 
-    # Crear configuración
     create_config
-
-    # Optimizar velocidad UDP
     optimize_udp_speed
 
-    # Asegurar que el archivo de log exista
     touch "$LOG_FILE"
     chmod 644 "$LOG_FILE"
 
-    # Crear archivo de servicio
     echo -e "${W}Creando servicio systemd...${N}"
     cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=UDP Custom Service
-After=network.target
-Wants=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -292,34 +297,37 @@ User=root
 WorkingDirectory=$CONFIG_DIR
 ExecStart=$UDP_BIN server -c $CONFIG_FILE
 Restart=always
-RestartSec=5
+RestartSec=3
 StandardOutput=append:$LOG_FILE
 StandardError=append:$LOG_FILE
+LimitNOFILE=$FD_LIMIT
+Nice=-5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=2
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-    # Recargar y activar servicio
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME" >/dev/null 2>&1
 
-    # Iniciar servicio
     echo -e "${W}Iniciando servicio...${N}"
     systemctl start "$SERVICE_NAME"
-    sleep 3
+    sleep 1
 
-    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-        # Verificar que el proceso esté usando el config
+    local port
+    port="$(get_udp_port)"
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && wait_for_port "$port"; then
         if ps aux | grep -q "[u]dp-custom.*-c $CONFIG_FILE"; then
             echo -e "${G}✓ UDP-Custom instalado y activo${N}"
-            echo -e "${W}  Puerto: ${Y}$(get_udp_port)${N}"
+            echo -e "${W}  Puerto: ${Y}$port${N}"
             echo -e "${W}  Proceso: ${Y}$(get_udp_process)${N}"
         else
             echo -e "${Y}⚠ Servicio activo pero no usando config.json${N}"
         fi
     else
-        echo -e "${Y}⚠ Servicio instalado pero no iniciado${N}"
+        echo -e "${Y}⚠ Servicio instalado pero el puerto $port no respondió a tiempo${N}"
     fi
 
     echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
@@ -394,7 +402,7 @@ show_udp_menu() {
 }
 
 show_detailed_status() {
-    echo -e "${Y}───────────────���─────────── / / / ──────────────────────────${N}"
+    echo -e "${Y}───────────────────────── / / / ───────────────────────────${N}"
     echo -e "${W}Servicio systemd:${N}"
     systemctl status "$SERVICE_NAME" --no-pager -l
 
@@ -425,12 +433,12 @@ udp_custom_menu() {
         if ! is_udp_installed; then
             case "${option:-}" in
                 1) install_udp_custom ;;
-                0) 
+                0)
                     echo -e "${G}Saliendo...${N}"
                     sleep 1
                     clear
                     break ;;
-                *) 
+                *)
                     echo -e "${R}Opción inválida${N}"
                     sleep 1 ;;
             esac
@@ -438,12 +446,12 @@ udp_custom_menu() {
             case "${option:-}" in
                 1) toggle_service ;;
                 2) restart_udp_custom ;;
-                3) 
+                3)
                     validate_repair_config
                     echo -e "${Y}Configuración actual:${N}"
                     cat "$CONFIG_FILE" 2>/dev/null | jq '.' || echo "Error al leer configuración"
                     read -r -p "Presiona Enter para continuar..." ;;
-                4) 
+                4)
                     new_port=$(read_port)
                     if jq ".listen = \":$new_port\"" "$CONFIG_FILE" > /tmp/udp_config.tmp 2>/dev/null; then
                         mv /tmp/udp_config.tmp "$CONFIG_FILE"
@@ -461,7 +469,7 @@ udp_custom_menu() {
                     else
                         echo -e "${R}✗ Error al actualizar el rango${N}"
                     fi ;;
-                6) 
+                6)
                     echo -e "${Y}Últimas 50 líneas del log:${N}"
                     if [[ -f "$LOG_FILE" ]]; then
                         tail -n 50 "$LOG_FILE"
@@ -471,12 +479,12 @@ udp_custom_menu() {
                     read -r -p "Presiona Enter para continuar..." ;;
                 7) show_detailed_status ;;
                 8) uninstall_udp_custom ;;
-                0) 
+                0)
                     echo -e "${G}Saliendo...${N}"
                     sleep 1
                     clear
                     break ;;
-                *) 
+                *)
                     echo -e "${R}Opción inválida${N}"
                     sleep 1 ;;
             esac

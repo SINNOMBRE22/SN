@@ -1,43 +1,44 @@
 #!/bin/bash
 set -uo pipefail
-#!/bin/bash
-ROOT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # =========================================================
 # SinNombre v2.0 - Panel CLI (Ubuntu 22.04+)
 # Creador: @SIN_NOMBRE22
 # =========================================================
 
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-M='\033[0;35m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
+# Colores
+R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
+M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
 BOLD='\033[1m'
-#=====≠===============================================
-#Colores del banner
-ROJO="\e[31m"
-BLANCO="\e[97m"
-CYAN="\e[36m"
-AMARILLO="\e[33m"
-RESET="\e[0m"
-#=====================================================
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROJO="\e[31m"; BLANCO="\e[97m"; CYAN="\e[36m"; AMARILLO="\e[33m"; RESET="\e[0m"
 
-# ============================
-# Licencia (runtime check)
-# ============================
-# ============================
-# Licencia (runtime check) - LOCAL + BYPASS DEV IP
-# ============================
+# Licencia
 LIC_DIR="/etc/.sn"
 LIC_PATH="${LIC_DIR}/lic"
-
-# BYPASS solo para tu VPS (tu IP pública)
 MY_DEV_IP="74.208.112.115"
 
+# -------------------------------------
+# Utilidades básicas
+# -------------------------------------
+cmd_timeout() {
+  local seconds="$1"; shift
+  timeout "$seconds" bash -c "$*" 2>/dev/null
+}
+
+get_public_ip() {
+  cmd_timeout 0.2 "curl -fsS https://api.ipify.org" \
+  || cmd_timeout 0.5 "curl -fsS ifconfig.me" \
+  || echo "No disponible"
+}
+
+clear_screen() { clear; }
+pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
+
+# -------------------------------------
+# Licencia
+# -------------------------------------
 license_box() {
   clear
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
@@ -50,26 +51,32 @@ license_box() {
   exit 1
 }
 
-# Función optimizada para IP pública (sin cache, timeout 0.2s)
-get_public_ip() {
-  timeout 0.2 bash -c "curl -fsS https://api.ipify.org 2>/dev/null" || echo "No disponible"
-}
-
 check_license() {
-  # 0) BYPASS SOLO si detecta IP y coincide EXACTA
-  MY_IP="$(get_public_ip)"
-  if [[ -n "$MY_IP" && "$MY_IP" == "$MY_DEV_IP" ]]; then
+  local my_ip
+  my_ip="$(get_public_ip)"
+  if [[ -n "$my_ip" && "$my_ip" == "$MY_DEV_IP" ]]; then
     return 0
   fi
-
-  # 1) Licencia local (marca creada por install.sh tras consumir key)
   [[ -f "$LIC_PATH" ]] || license_box
 }
 
-check_license
-#________________________________________
-#________________________________________
+# -------------------------------------
+# Requisitos
+# -------------------------------------
+require_root() {
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    clear_screen
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    echo -e "${Y}Este panel debe ejecutarse como root.${N}"
+    echo -e "${W}Usa:${N} ${C}sudo menu${N}  ${W}o${N}  ${C}sudo sn${N}"
+    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    exit 1
+  fi
+}
 
+# -------------------------------------
+# Módulos
+# -------------------------------------
 run_module() {
   local rel="$1"
   local path="$ROOT_DIR/$rel"
@@ -87,24 +94,9 @@ run_module() {
   fi
 }
 
-clear_screen() { clear; }
-
-pause() {
-  echo ""
-  read -r -p "Presiona Enter para continuar..."
-}
-
-require_root() {
-  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-    clear_screen
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-    echo -e "${Y}Este panel debe ejecutarse como root.${N}"
-    echo -e "${W}Usa:${N} ${C}sudo menu${N}  ${W}o${N}  ${C}sudo sn${N}"
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-    exit 1
-  fi
-}
-
+# -------------------------------------
+# Info de sistema / banners
+# -------------------------------------
 show_custom_banner() {
   if command -v toilet &>/dev/null; then
     echo -e "\e[31m$(toilet -f slant -F metal "SinNombre")\e[0m"
@@ -113,6 +105,7 @@ show_custom_banner() {
 
 get_system_info() {
   if [[ -f /etc/os-release ]]; then
+    # shellcheck disable=SC1091
     . /etc/os-release
     DISTRO="${PRETTY_NAME:-$(uname -rs)}"
   else
@@ -122,16 +115,11 @@ get_system_info() {
   IP_PUBLICA="$(get_public_ip)"
   USUARIO="$(whoami)"
   ZONA_HORARIA="$(timedatectl 2>/dev/null | awk -F': ' '/Time zone/ {print $2}' | awk '{print $1}' || date +%Z)"
+  read MEM_TOTAL MEM_USADA MEM_LIBRE <<< "$(free -m | awk '/^Mem:/ {print $2, $3, $7}')"
 
-  read MEM_TOTAL MEM_USADA MEM_LIBRE <<< $(free -m | awk '/^Mem:/ {print $2, $3, $7}')
-
-  # Verificar dominio
   DOMINIO=""
-  if [[ -f "/etc/SN/dominio.txt" ]]; then
-    DOMINIO="$(cat /etc/SN/dominio.txt)"
-  fi
+  [[ -f "/etc/SN/dominio.txt" ]] && DOMINIO="$(cat /etc/SN/dominio.txt)"
 
-  # Verificar swap
   SWAP_INFO=""
   SWAP_TOTAL=$(free -m | awk '/^Swap:/ {print $2}')
   if [[ "$SWAP_TOTAL" -gt 0 ]]; then
@@ -159,19 +147,11 @@ show_banner() {
   [[ -n "$SWAP_INFO" ]] && echo -e "${R}[${N} ${W}Memoria Swap: ${SWAP_INFO}${R} ]${N}"
 }
 
-get_systemd_unit_by_pid() {
-  local pid="$1"
-  [[ -n "${pid:-}" ]] || { echo ""; return 0; }
-  timeout 0.2 systemctl show -p Unit --value "$pid" 2>/dev/null || echo ""
-}
-
 get_proc_pid_by_port() {
   local port="$1"
   local line proc pid
   line="$(
-    timeout 0.2 ss -H -lntup 2>/dev/null \
-    | awk -v re=":${port}\$" '$5 ~ re {print; exit}' \
-    || true
+    cmd_timeout 0.2 "ss -H -lntup" | awk -v re=":${port}\$" '$5 ~ re {print; exit}' || true
   )"
   [[ -n "${line:-}" ]] || { echo "Desconocido|"; return 0; }
   proc="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' || true)"
@@ -190,45 +170,40 @@ get_service_type() {
   fi
 }
 
-# Función para obtener puertos reales de configs (secuencial, timeout 0.2s)
 get_real_ports() {
   declare -A service_ports
-
-  # Inicializar variables locales para evitar unbound
   local v2_port="" x_port="" badvpn_port="" udp_port="" squid_port="" stunnel_port="" dropbear_port="" openvpn_port="" wg_port="" ssh_port=""
 
-  # Ejecutar secuencialmente (sin background para evitar problemas de asignación en subshells)
-  ssh_port=$(timeout 0.2 grep -E '^Port' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1 || echo "22")
+  ssh_port=$(cmd_timeout 0.2 "grep -E '^Port' /etc/ssh/sshd_config" | awk '{print $2}' | head -1 || echo "22")
   if [[ -f /etc/v2ray/config.json ]] && command -v jq &>/dev/null; then
-    v2_port=$(timeout 0.2 jq -r '.inbounds[0].port // empty' /etc/v2ray/config.json 2>/dev/null || echo "")
+    v2_port=$(cmd_timeout 0.2 "jq -r '.inbounds[0].port // empty' /etc/v2ray/config.json" 2>/dev/null || echo "")
   fi
   if [[ -f /usr/local/etc/xray/config.json ]] && command -v jq &>/dev/null; then
-    x_port=$(timeout 0.2 jq -r '.inbounds[0].port // empty' /usr/local/etc/xray/config.json 2>/dev/null || echo "")
+    x_port=$(cmd_timeout 0.2 "jq -r '.inbounds[0].port // empty' /usr/local/etc/xray/config.json" 2>/dev/null || echo "")
   fi
   if systemctl is-active --quiet badvpn-udpgw 2>/dev/null; then
-    badvpn_port=$(timeout 0.2 ps aux | grep badvpn-udpgw | grep -oE ':[0-9]+' | head -1 | sed 's/://' || echo "")
-    [[ -z "$badvpn_port" ]] && badvpn_port=$(timeout 0.2 grep -oE 'port [0-9]+' /etc/badvpn-udpgw.conf 2>/dev/null | awk '{print $2}' || echo "")
+    badvpn_port=$(cmd_timeout 0.2 "ps aux | grep badvpn-udpgw | grep -oE ':[0-9]+' | head -1 | sed 's/://'" || true)
+    [[ -z "$badvpn_port" ]] && badvpn_port=$(cmd_timeout 0.2 "grep -oE 'port [0-9]+' /etc/badvpn-udpgw.conf" | awk '{print $2}' || echo "")
   fi
   if [[ -f /root/udp/config.json ]] && command -v jq &>/dev/null; then
-    udp_port=$(timeout 0.2 jq -r '.listen // empty' /root/udp/config.json 2>/dev/null | sed 's/://' || echo "")
+    udp_port=$(cmd_timeout 0.2 "jq -r '.listen // empty' /root/udp/config.json" | sed 's/://' || echo "")
   fi
   if systemctl is-active --quiet squid 2>/dev/null || systemctl is-active --quiet squid3 2>/dev/null; then
-    squid_port=$(timeout 0.2 grep -E '^http_port' /etc/squid/squid.conf 2>/dev/null | awk '{print $2}' | head -1 || echo "")
+    squid_port=$(cmd_timeout 0.2 "grep -E '^http_port' /etc/squid/squid.conf" | awk '{print $2}' | head -1 || echo "")
   fi
   if systemctl is-active --quiet stunnel4 2>/dev/null; then
-    stunnel_port=$(timeout 0.2 grep -E '^accept' /etc/stunnel/stunnel.conf 2>/dev/null | awk '{print $2}' | head -1 || echo "")
+    stunnel_port=$(cmd_timeout 0.2 "grep -E '^accept' /etc/stunnel/stunnel.conf" | awk '{print $2}' | head -1 || echo "")
   fi
   if systemctl is-active --quiet dropbear 2>/dev/null; then
-    dropbear_port=$(timeout 0.2 grep -E '^DROPBEAR_PORT' /etc/default/dropbear 2>/dev/null | awk -F'=' '{print $2}' | head -1 || echo "")
+    dropbear_port=$(cmd_timeout 0.2 "grep -E '^DROPBEAR_PORT' /etc/default/dropbear" | awk -F'=' '{print $2}' | head -1 || echo "")
   fi
   if systemctl is-active --quiet openvpn 2>/dev/null; then
-    openvpn_port=$(timeout 0.2 grep -E '^port' /etc/openvpn/server.conf 2>/dev/null | awk '{print $2}' | head -1 || echo "")
+    openvpn_port=$(cmd_timeout 0.2 "grep -E '^port' /etc/openvpn/server.conf" | awk '{print $2}' | head -1 || echo "")
   fi
   if ls /etc/wireguard/*.conf &>/dev/null; then
-    wg_port=$(timeout 0.2 grep -hE '^ListenPort' /etc/wireguard/*.conf 2>/dev/null | awk '{print $3}' | head -1 || echo "")
+    wg_port=$(cmd_timeout 0.2 "grep -hE '^ListenPort' /etc/wireguard/*.conf" | awk '{print $3}' | head -1 || echo "")
   fi
 
-  # Asignar solo si válidos
   [[ -n "$ssh_port" ]] && service_ports["sshd"]="$ssh_port"
   [[ -n "$v2_port" && "$v2_port" != "null" ]] && service_ports["v2ray"]="$v2_port"
   [[ -n "$x_port" && "$x_port" != "null" ]] && service_ports["xray"]="$x_port"
@@ -240,7 +215,6 @@ get_real_ports() {
   [[ -n "$openvpn_port" ]] && service_ports["openvpn"]="$openvpn_port"
   [[ -n "$wg_port" ]] && service_ports["wireguard"]="$wg_port"
 
-  # Retornar array
   for svc in "${!service_ports[@]}"; do
     echo "$svc:${service_ports[$svc]}"
   done
@@ -251,7 +225,6 @@ show_services_status() {
   echo -e "${W}                   SERVICIOS ACTIVOS${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 
-  # Obtener puertos reales (secuencial)
   local real_ports_output
   real_ports_output="$(get_real_ports)"
 
@@ -264,32 +237,27 @@ show_services_status() {
     real_ports["$svc"]="$port"
   done <<< "$real_ports_output"
 
-  # Servicios activos con PID (paralelizado)
   declare -A active_services
   while read -r unit pid; do
     [[ -z "$unit" || -z "$pid" ]] && continue
     active_services["$unit"]="$pid"
-  done <<< "$(timeout 0.2 systemctl list-units --type=service --state=active --no-pager --no-legend 2>/dev/null | awk '{print $1, $4}' | sed 's/\.service//' || true)"
+  done <<< "$(cmd_timeout 0.2 "systemctl list-units --type=service --state=active --no-pager --no-legend" | awk '{print $1, $4}' | sed 's/\.service//' || true)"
 
-  # Output de ss (TCP y UDP, paralelizado)
   local lines
-  lines="$(timeout 0.2 bash -c "ss -H -lntup 2>/dev/null && ss -H -lnup 2>/dev/null" || true)"
+  lines="$(cmd_timeout 0.2 "ss -H -lntup && ss -H -lnup" || true)"
 
   declare -A services_ports=()
 
-  # Procesar líneas de ss y mapear a servicios activos
   while read -r line; do
     [[ -z "$line" ]] && continue
-
     local port proc pid unit is_udp
     port="$(echo "$line" | awk '{print $5}' | awk -F':' '{print $NF}')"
     [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]] && continue
 
     proc="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' || true)"
-    pid="$(echo "$line" | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' || true)"
-    is_udp=$(echo "$line" | grep -q 'udp\|UNCONN' && echo "true" || echo "false")
+    pid="$(echo "$line"  | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' || true)"
+    is_udp=$(echo "$line" | grep -qE 'udp|UNCONN' && echo "true" || echo "false")
 
-    # Mapear a servicio activo por PID
     local service=""
     for svc in "${!active_services[@]}"; do
       if [[ "${active_services[$svc]}" == "$pid" ]]; then
@@ -298,23 +266,18 @@ show_services_status() {
       fi
     done
     [[ -z "$service" ]] && service="$(get_service_type "$proc" "")"
-
-    # Usar nombre real si disponible
     [[ -n "${real_ports[$service]:-}" ]] && service="$service"
 
-    # Excluir UDP de V2Ray/XRay
-    if [[ "$is_udp" == "true" && ("$service" =~ ^(v2ray|xray|V2RAY|XRAY)$) ]]; then
+    if [[ "$is_udp" == "true" && "$service" =~ ^(v2ray|xray|V2RAY|XRAY)$ ]]; then
       continue
     fi
 
-    # Para BadVPN, solo mostrar si el puerto coincide con el real (principal)
     if [[ "$service" == "badvpn-udpgw" ]]; then
       if [[ -n "${real_ports[$service]:-}" && "$port" != "${real_ports[$service]}" ]]; then
-        continue  # Ignorar puertos dinámicos
+        continue
       fi
     fi
 
-    # Agregar UDP si no es V2Ray
     local port_label="$port"
     [[ "$is_udp" == "true" ]] && port_label="${port}(UDP)"
 
@@ -336,7 +299,6 @@ show_services_status() {
   fi
 
   local keys=("${!services_ports[@]}")
-  local count=${#keys[@]}
   local half=$(( (count + 1) / 2 ))
 
   for ((i = 0; i < half; i++)); do
@@ -364,6 +326,9 @@ show_system_status() {
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
 }
 
+# -------------------------------------
+# Menús
+# -------------------------------------
 show_full_menu() {
   echo -e "${W}                     MENÚ PRINCIPAL${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
@@ -389,12 +354,127 @@ show_no_v2ray_menu() {
   echo -e "${R}[${Y}99${R}]${N}  ${C}REBOOT VPS${N}                ${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}"
   echo -e "${R}[${Y}101${R}]${N} ${C}ACTUALIZAR SCRIPT${N}         ${R}[${Y}102${R}]${N} ${C}SALIR DE LA VPS${N}"
   echo -e "${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════���═══════════${N}"
 }
 
+banner_ssh_menu() { run_module "Sistema/banner_ssh.sh"; }
+
+# -------------------------------------
+# Acciones principales
+# -------------------------------------
+reboot_vps() {
+  clear_screen
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${Y}                    REINICIAR VPS${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -ne "${Y}¿Estás seguro que deseas reiniciar el VPS? (s/n): ${N}"
+  read -r confirm
+  if [[ "${confirm:-}" =~ ^[sS]$ ]]; then
+    echo -e "${Y}El VPS se reiniciará en 10 segundos...${N}"
+    sleep 10
+    reboot
+    exit 0
+  fi
+}
+
+desinstalador_script() {
+  clear_screen
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${W}                  DESINSTALAR COMPLETAMENTE${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+
+  echo -e "${Y}¡ATENCIÓN! Esto eliminará:${N}"
+  echo -e "${W}- Archivos y carpetas del Script (menu, sn, Herramientas/, Usuarios/, Protocolos/, Sistema/ ...)"
+  echo -e "- Servicios systemd instalados por SinNombre (v2ray, xray, stunnel4, squid, etc.)"
+  echo -e "- Configuración propia del panel"
+  echo -e "${R}Esta acción es irreversible.${N}\n"
+
+  echo -ne "${Y}¿Estás seguro de continuar? (s/n): ${N}"
+  read -r confirm
+  [[ "${confirm:-}" =~ ^[sS]$ ]] || { echo -e "${Y}Cancelado.${N}"; pause; return; }
+
+  for svc in v2ray xray trojan dropbear stunnel4 squid squid3; do
+    if systemctl list-unit-files | grep -q "^$svc.service"; then
+      systemctl stop "$svc" 2>/dev/null
+      systemctl disable "$svc" 2>/dev/null
+      rm -f "/etc/systemd/system/$svc.service" "/lib/systemd/system/$svc.service" 2>/dev/null
+    fi
+    pkill -f "$svc" 2>/dev/null || true
+  done
+
+  systemctl daemon-reload
+
+  local script_files=("$ROOT_DIR/menu" "$ROOT_DIR/sn")
+  local script_dirs=("$ROOT_DIR/Herramientas" "$ROOT_DIR/Usuarios" "$ROOT_DIR/Protocolos" "$ROOT_DIR/Sistema")
+  for f in "${script_files[@]}"; do
+    [[ -e "$f" ]] && rm -f "$f"
+  done
+  for d in "${script_dirs[@]}"; do
+    [[ -d "$d" ]] && rm -rf "$d"
+  done
+
+  for bin in sn menu; do
+    [[ -L "/usr/local/bin/$bin" ]] && rm -f "/usr/local/bin/$bin"
+    [[ -f "/usr/local/bin/$bin" ]] && rm -f "/usr/local/bin/$bin"
+  done
+
+  echo -e "${G}Desinstalación completa.${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${Y}El Script y los servicios añadidos han sido eliminados.${N}"
+  echo -e "${W}Puedes cerrar la terminal o reiniciar el VPS.${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════���═══════════${N}"
+  exit 0
+}
+
+update_script() {
+  clear_screen
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${W}                ACTUALIZAR SCRIPT${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${Y}Descargando la última versión desde GitHub...${N}"
+  if wget -O /tmp/menu_new https://raw.githubusercontent.com/SINNOMBRE22/SN/main/menu 2>/dev/null; then
+    chmod +x /tmp/menu_new
+    cp /tmp/menu_new "$ROOT_DIR/menu"
+    chmod +x "$ROOT_DIR/menu"
+    echo -e "${G}Script actualizado exitosamente!${N}"
+    echo -e "${Y}Reinicia el menú para aplicar cambios.${N}"
+  else
+    echo -e "${R}Error al descargar la actualización.${N}"
+  fi
+  pause
+}
+
+exit_vps() {
+  clear_screen
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${Y}              Saliendo de la sesión SSH...${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  sleep 1
+  kill -KILL $PPID 2>/dev/null || exit 0
+}
+
+invalid_option() {
+  clear_screen
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${B}                   OPCIÓN INVÁLIDA${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  sleep 2
+}
+
+exit_script() {
+  clear_screen
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  echo -e "${Y}              Saliendo de SinNombre...${N}"
+  echo -e "${G}           ¡Gracias por usar SinNombre!${N}"
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  exit
+}
+
+# -------------------------------------
+# Menú principal
+# -------------------------------------
 main_menu() {
   while true; do
-    # Verificar si v2ray/xray están instalados (cada vez que se muestra el menú)
     v2ray_installed=false
     if systemctl is-active --quiet v2ray 2>/dev/null || systemctl is-active --quiet xray 2>/dev/null || [[ -f /etc/v2ray/config.json ]] || [[ -f /usr/local/etc/xray/config.json ]]; then
       v2ray_installed=true
@@ -449,132 +529,8 @@ main_menu() {
   done
 }
 
-banner_ssh_menu() {
-  run_module "Sistema/banner_ssh.sh"
-}
-
-reboot_vps() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}                    REINICIAR VPS${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -ne "${Y}¿Estás seguro que deseas reiniciar el VPS? (s/n): ${N}"
-  read -r confirm
-  if [[ "${confirm:-}" == "s" || "${confirm:-}" == "S" ]]; then
-    echo -e "${Y}El VPS se reiniciará en 10 segundos...${N}"
-    sleep 10
-    reboot
-    exit 0
-  fi
-}
-
-desinstalador_script() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}                  DESINSTALAR COMPLETAMENTE${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-
-  echo -e "${Y}¡ATENCIÓN! Esto eliminará:${N}"
-  echo -e "${W}- Archivos y carpetas del Script (menu, sn, Herramientas/, Usuarios/, Protocolos/, Sistema/ ...)"
-  echo -e "- Servicios systemd instalados por SinNombre (v2ray, xray, stunnel4, squid, etc.)"
-  echo -e "- Configuración propia del panel"
-  echo -e "${R}Esta acción es irreversible.${N}\n"
-
-  echo -ne "${Y}¿Estás seguro de continuar? (s/n): ${N}"
-  read -r confirm
-  [[ "${confirm:-}" =~ ^[sS]$ ]] || { echo -e "${Y}Cancelado.${N}"; pause; return; }
-
-  # Detener y eliminar servicios conocidos
-  for svc in v2ray xray trojan dropbear stunnel4 squid squid3; do
-    if systemctl list-unit-files | grep -q "^$svc.service"; then
-      systemctl stop "$svc" 2>/dev/null
-      systemctl disable "$svc" 2>/dev/null
-      rm -f "/etc/systemd/system/$svc.service" "/lib/systemd/system/$svc.service" 2>/dev/null
-    fi
-    pkill -f "$svc" 2>/dev/null || true
-  done
-
-  systemctl daemon-reload
-
-  # Borrar archivos y directorios instalados por el panel
-  script_files=(
-    "$ROOT_DIR/menu"
-    "$ROOT_DIR/sn"
-  )
-  script_dirs=(
-    "$ROOT_DIR/Herramientas"
-    "$ROOT_DIR/Usuarios"
-    "$ROOT_DIR/Protocolos"
-    "$ROOT_DIR/Sistema"
-  )
-  for f in "${script_files[@]}"; do
-    [ -e "$f" ] && rm -f "$f"
-  done
-
-  for d in "${script_dirs[@]}"; do
-    [ -d "$d" ] && rm -rf "$d"
-  done
-
-  # Eliminar symlinks en /usr/local/bin
-  for bin in sn menu; do
-    [ -L "/usr/local/bin/$bin" ] && rm -f "/usr/local/bin/$bin"
-    [ -f "/usr/local/bin/$bin" ] && rm -f "/usr/local/bin/$bin"
-  done
-
-  echo -e "${G}Desinstalación completa.${N}"
-  echo -e "${R}══════════════════════════ / / / ════════════════���═════════${N}"
-  echo -e "${Y}El Script y los servicios añadidos han sido eliminados.${N}"
-  echo -e "${W}Puedes cerrar la terminal o reiniciar el VPS.${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  exit 0
-}
-
-update_script() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}                ACTUALIZAR SCRIPT${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}Descargando la última versión desde GitHub...${N}"
-  if wget -O /tmp/menu_new https://raw.githubusercontent.com/SINNOMBRE22/SN/main/menu 2>/dev/null; then
-    chmod +x /tmp/menu_new
-    cp /tmp/menu_new "$ROOT_DIR/menu"
-    chmod +x "$ROOT_DIR/menu"
-    echo -e "${G}Script actualizado exitosamente!${N}"
-    echo -e "${Y}Reinicia el menú para aplicar cambios.${N}"
-  else
-    echo -e "${R}Error al descargar la actualización.${N}"
-  fi
-  pause
-}
-
-exit_vps() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}              Saliendo de la sesión SSH...${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  sleep 1
-  # Matar el proceso padre para cerrar la sesión SSH
-  kill -KILL $PPID 2>/dev/null || exit 0
-}
-
-invalid_option() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${B}                   OPCIÓN INVÁLIDA${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  sleep 2
-}
-
-exit_script() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}              Saliendo de SinNombre...${N}"
-  echo -e "${G}           ¡Gracias por usar SinNombre!${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  exit
-}
-
 trap exit_script SIGINT SIGTERM
 
+check_license
 require_root
 main_menu
