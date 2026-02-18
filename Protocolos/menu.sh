@@ -99,7 +99,7 @@ main_menu_single() {
     udp_st="$(status_badge "$(check_udp_custom_status)")"
     badvpn_st="$(status_badge "$(check_badvpn_status)")"
     haproxy_st="$(status_badge "$(check_haproxy_mux_status)")"
-
+ #   websoket_st="$(status_badge "$(check_websoket_status)")"
     title_box "INSTALADORES"
     echo ""
 
@@ -112,6 +112,7 @@ main_menu_single() {
     print_item_list "07" "UDP-CUSTOM" "$udp_st"
     print_item_list "08" "V2RAY" "$v2_st"
     print_item_list "09" "HAPROXY MUX" "$haproxy_st"
+#    print_item_list "10" "WEBSOKET" "$websoket_st"
 
     echo ""
     printf "${W}> ${Y}%2s${W} ─ ${C}${BOLD}%-15s${N}\n" "00" "VOLVER"
@@ -132,6 +133,7 @@ main_menu_single() {
       07|7) run_proto "Protocolos/udp-custom.sh" ;;
       08|8) run_proto "Protocolos/v2ray.sh" ;;
       09|9) run_proto "Protocolos/haproxy_mux.sh" ;;
+  #    10|10 run_proto "Protocolos/websoket/websoket.sh"
       00|0) break ;;
       *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac

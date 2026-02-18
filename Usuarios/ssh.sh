@@ -777,88 +777,80 @@ eliminar_all(){
 #===============MONITOR================
 sshmonitor(){
   clear
+  # Colores (asegúrate de que coincidan con tu script)
+  # R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; N='\033[0m'; G='\033[0;32m'
 
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}           📡 MONITOR DE USUARIOS SSH / VPN 📡${N}"
+  echo -e "${Y}           📡 MONITOR DE USUARIOS SSH / VPN / UDP 📡${N}"
   echo -e "${R}────────────────────────── / / / ──────────────────────────${N}"
 
-  # ENCABEZADO (MISMO FORMATO QUE LAS FILAS)
-  printf " %-14s %-12s %-16s %-10s\n" \
-  "USUARIO" "ESTADO" "CONEXIONES" "TIEMPO"
-
+  printf " %-14s %-12s %-16s %-10s\n" "USUARIO" "ESTADO" "CONEXIONES" "TIEMPO"
   echo -e "${R}────────────────────────── / / / ──────────────────────────${N}"
 
-  # usuarios válidos
+  # Obtener puerto de UDP Custom desde el config.json para el conteo de ss
+  UDP_PORT=$(jq -r '.listen // empty' "/root/udp/config.json" 2>/dev/null | sed 's/://')
+  [[ -z "$UDP_PORT" ]] && UDP_PORT=36712
+
   cat_users=$(awk -F: '$3>=1000 && $7 ~ /false/ {print}' /etc/passwd)
 
   for i in $(echo "$cat_users" | awk -F: '{print $1}'); do
-
     user="$i"
 
-    # ===== LIMITE =====
+    # ===== LIMITE (Comentario en el campo 5 de /etc/passwd) =====
     s2ssh=$(echo "$cat_users" | grep -w "$i" | awk -F: '{print $5}' | cut -d',' -f1)
     [[ -z "$s2ssh" ]] && s2ssh=0
 
-    # ===== SSH =====
-    sshd=$(ps -u "$user" | grep sshd | wc -l)
-
-    # ===== DROPBEAR =====
-    if netstat -nltp | grep dropbear >/dev/null; then
-      drop=$(ps aux | grep dropbear | grep "$user" | wc -l)
-    else
-      drop=0
-    fi
+    # ===== SSH & DROPBEAR =====
+    sshd=$(ps -u "$user" | grep -c sshd)
+    drop=$(ps aux | grep -i dropbear | grep -w "$user" | grep -v grep | wc -l)
 
     # ===== OPENVPN =====
-    if [[ -e /etc/openvpn/openvpn-status.log ]]; then
-      ovp=$(grep -E ",$user," /etc/openvpn/openvpn-status.log | wc -l)
-    else
-      ovp=0
-    fi
+    ovp=0
+    [[ -e /etc/openvpn/openvpn-status.log ]] && ovp=$(grep -c ",$user," /etc/openvpn/openvpn-status.log)
 
-    # ===== CONEXIONES =====
-    cnx=$((sshd + drop))
-    conex=$((cnx + ovp))
+    # ===== UDP CUSTOM =====
+    # Nota: UDP Custom corre como root, pero si el usuario tiene un tunel SSH abierto 
+    # sobre UDP, lo contaremos dentro de las conexiones SSH/Dropbear.
+    # Aquí sumamos procesos directos si existieran bajo el usuario.
+    udp_proc=$(ps -u "$user" | grep -E "udp-custom|badvpn" | grep -v grep | wc -l)
 
-    # ===== TIEMPO =====
-    if [[ $cnx -gt 0 ]]; then
-      pid=$(ps -u "$user" | grep sshd | awk 'NR==1{print $1}')
-      timerr=$(ps -o etime= -p "$pid" | sed 's/^ *//')
-      [[ ${#timerr} -lt 8 ]] && timerr="00:$timerr"
-    elif [[ $ovp -gt 0 ]]; then
-      tmp2=$(date +%H:%M:%S)
-      tmp1=$(grep -w "$user" /etc/openvpn/openvpn-status.log | awk '{print $4}' | head -1)
-      [[ -z "$tmp1" ]] && tmp1="00:00:00" && tmp2="00:00:00"
+    # ===== TOTAL CONEXIONES =====
+    conex=$((sshd + drop + ovp + udp_proc))
 
-      calc1=$(echo "${tmp1:0:2}*3600 + ${tmp1:3:2}*60 + ${tmp1:6:2}" | bc)
-      calc2=$(echo "${tmp2:0:2}*3600 + ${tmp2:3:2}*60 + ${tmp2:6:2}" | bc)
-
-      seg=$((calc2-calc1))
-      hor=$((seg/3600))
-      min=$(((seg%3600)/60))
-      seg=$((seg%60))
-      timerr=$(printf "%02d:%02d:%02d" $hor $min $seg)
+    # ===== TIEMPO DE ACTIVIDAD =====
+    if [[ $conex -gt 0 ]]; then
+      # Buscamos el PID del proceso más antiguo del usuario
+      pid=$(ps -u "$user" -o pid= | head -n 1 | xargs)
+      if [[ ! -z "$pid" ]]; then
+        timerr=$(ps -o etime= -p "$pid" | sed 's/^ *//')
+        [[ ${#timerr} -lt 8 ]] && timerr="00:$timerr"
+      else
+        timerr="00:00:00"
+      fi
     else
       timerr="00:00:00"
     fi
 
-    # ===== FORMATO LIMPIO (SIN COLORES) =====
-    userf=$(printf '%-14s' "$user")
-    estado_txt=$(printf '%-12s' "$( [[ $conex -eq 0 ]] && echo OFFLINE || echo ONLINE )")
-    conf=$(printf '%-14s' "$conex/$s2ssh")
-    timef=$(printf '%-10s' "$timerr")
-
-    # ===== COLOR DE ESTADO =====
+    # ===== FORMATO Y COLORES =====
+    estado_txt=$( [[ $conex -eq 0 ]] && echo "OFFLINE" || echo "ONLINE" )
     [[ $conex -eq 0 ]] && estado_color=$R || estado_color=$G
 
-    # ===== IMPRESIÓN FINAL =====
-    printf " ${Y}%-14s${N} ${estado_color}%-14s${N} ${G}%-14s${N} ${Y}%-10s${N}\n" \
-    "$userf" "$estado_txt" "$conf" "$timef"
-   echo -e "${R}─────────────────────────── / / / ──────────────────────────${N}"
-   done
+    printf " ${Y}%-14s${N} ${estado_color}%-12s${N} ${G}%-16s${N} ${Y}%-10s${N}\n" \
+    "$user" "$estado_txt" "$conex/$s2ssh" "$timerr"
+  done
+
+  # ===== INFO EXTRA DE UDP CUSTOM (Global) =====
+  if systemctl is-active --quiet udp-custom; then
+     udp_total=$(ss -u -a 2>/dev/null | grep -cE ":$UDP_PORT\b")
+     echo -e "${R}────────────────────────── / / / ──────────────────────────${N}"
+     echo -e "${W} UDP CUSTOM ACTIVO | PUERTO: ${Y}$UDP_PORT${W} | CONEXIONES TOTALES: ${G}$udp_total${N}"
+  fi
+
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${Y}            ►► Presione ENTER para continuar ◄◄${N}"
   read
 }
+
 
 #===============FIN===============
 
