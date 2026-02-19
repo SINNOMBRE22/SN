@@ -775,21 +775,95 @@ eliminar_all(){
 }
 #===============MONITOR================
 #===============MONITOR================
+
+# Archivo de log del UDP-Custom (el módulo Protocolos/udp-custom.sh pone logs aquí)
+UDP_LOG_FILE="/var/log/udp-custom.log"
+
+# Funciones para extraer usuario|ip desde el log UDP (JSON-lines o texto)
+extract_users_from_json_log() {
+  local file="$1"
+  [[ ! -f "$file" ]] && return 1
+  # Si jq está disponible lo usamos para extraer campos comunes
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    if command -v jq >/dev/null 2>&1; then
+      user=$(echo "$line" | jq -r 'try(.user // .username // .auth.user // empty)' 2>/dev/null || echo "")
+      ip=$(echo "$line" | jq -r 'try(.remote // .ip // .addr // .client_ip // empty)' 2>/dev/null || echo "")
+      if [[ -n "$user" && "$user" != "null" ]]; then
+        echo "${user}|${ip:-"-"}"
+      fi
+    fi
+  done < "$file"
+  return 0
+}
+
+extract_users_from_text_log() {
+  local file="$1"
+  [[ ! -f "$file" ]] && return 1
+  # heurísticas para logs en texto plano
+  grep -E -i "auth|authenticated|login|new connection|accepted|connect|client|username|user" "$file" 2>/dev/null | while IFS= read -r line; do
+    ip=$(echo "$line" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1 || true)
+    user=""
+    user=$(echo "$line" | sed -nE 's/.*[Uu]sername[=:\ ]*\"?([A-Za-z0-9._-]+)\"?.*/\1/p' || true)
+    if [[ -z "$user" ]]; then
+      user=$(echo "$line" | sed -nE 's/.*[Uu]ser[=:\ ]*\"?([A-Za-z0-9._-]+)\"?.*/\1/p' || true)
+    fi
+    if [[ -z "$user" ]]; then
+      user=$(echo "$line" | sed -nE 's/.*client[ =\[]*\"?([A-Za-z0-9._-]+)\"?.*/\1/p' || true)
+    fi
+    if [[ -n "$user" ]]; then
+      echo "${user}|${ip:-"-"}"
+    fi
+  done
+  return 0
+}
+
+# Construye un listado deduplicado user|ip desde el log (combina JSON y texto)
+build_udp_user_list() {
+  local file="$UDP_LOG_FILE"
+  [[ ! -f "$file" ]] && return 1
+  # Primero intentar JSON extraction (si jq está presente)
+  if command -v jq >/dev/null 2>&1; then
+    extract_users_from_json_log "$file" 2>/dev/null
+  fi
+  # Siempre intentar heurística de texto (complementa)
+  extract_users_from_text_log "$file" 2>/dev/null
+}
+
 sshmonitor(){
   clear
-  # Colores (asegúrate de que coincidan con tu script)
-  # R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; N='\033[0m'; G='\033[0;32m'
-
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${Y}           📡 MONITOR DE USUARIOS SSH / VPN / UDP 📡${N}"
   echo -e "${R}────────────────────────── / / / ──────────────────────────${N}"
 
-  printf " %-14s %-12s %-16s %-10s\n" "USUARIO" "ESTADO" "CONEXIONES" "TIEMPO"
+  printf " %-14s %-12s %-18s %-10s\n" "USUARIO" "ESTADO" "CONEXIONES(L/UDP)" "TIEMPO"
   echo -e "${R}────────────────────────── / / / ──────────────────────────${N}"
 
-  # Obtener puerto de UDP Custom desde el config.json para el conteo de ss
-  UDP_PORT=$(jq -r '.listen // empty' "/root/udp/config.json" 2>/dev/null | sed 's/://')
-  [[ -z "$UDP_PORT" ]] && UDP_PORT=36712
+  # Obtener puerto UDP custom del config si existe (manejo simple)
+  UDP_PORT=36712
+  if [[ -f /root/udp/config.json ]] && command -v jq >/dev/null 2>&1; then
+    porttmp=$(jq -r '.listen // empty' "/root/udp/config.json" 2>/dev/null | sed 's/://')
+    [[ -n "$porttmp" ]] && UDP_PORT="$porttmp"
+  fi
+
+  # Construir mapa de usuarios detectados en logs de UDP (user -> count, ips)
+  declare -A UDP_USER_COUNT
+  declare -A UDP_USER_IPS
+  if [[ -f "$UDP_LOG_FILE" ]]; then
+    while IFS= read -r entry; do
+      [[ -z "$entry" ]] && continue
+      # entrada en formato user|ip
+      user="${entry%%|*}"
+      ip="${entry#*|}"
+      [[ -z "$user" ]] && continue
+      UDP_USER_COUNT["$user"]=$(( ${UDP_USER_COUNT["$user"]:-0} + 1 ))
+      # agregar IP si no está repetida en la lista simple
+      existing="${UDP_USER_IPS["$user"]:-}"
+      if [[ -n "$ip" && "$ip" != "-" && "$existing" != *"$ip"* ]]; then
+        UDP_USER_IPS["$user"]="${existing} ${ip}"
+      fi
+    done < <(build_udp_user_list 2>/dev/null | sort -u)
+  fi
 
   cat_users=$(awk -F: '$3>=1000 && $7 ~ /false/ {print}' /etc/passwd)
 
@@ -808,18 +882,33 @@ sshmonitor(){
     ovp=0
     [[ -e /etc/openvpn/openvpn-status.log ]] && ovp=$(grep -c ",$user," /etc/openvpn/openvpn-status.log)
 
-    # ===== UDP CUSTOM =====
-    # Nota: UDP Custom corre como root, pero si el usuario tiene un tunel SSH abierto 
-    # sobre UDP, lo contaremos dentro de las conexiones SSH/Dropbear.
-    # Aquí sumamos procesos directos si existieran bajo el usuario.
-    udp_proc=$(ps -u "$user" | grep -E "udp-custom|badvpn" | grep -v grep | wc -l)
+    # ===== UDP CUSTOM: ahora intentamos mapear por username que aparezca en logs del servicio
+    udp_proc=0
+    if [[ -n "${UDP_USER_COUNT["$user"]:-}" ]]; then
+      udp_proc=${UDP_USER_COUNT["$user"]}
+    else
+      # fallback: si no aparece username en logs, tratamos de detectar procesos del usuario relacionados con udp (heurística)
+      udp_proc_local=$(ps -u "$user" | grep -E "udp-custom|badvpn" | grep -v grep | wc -l)
+      udp_proc=$((udp_proc + udp_proc_local))
+      # también podemos revisar si algún PID en ss -u -a -p pertenece al usuario (si ss muestra pid)
+      if ss -u -a -p 2>/dev/null | awk -v port=":$UDP_PORT" '$0 ~ port {print}' | grep -q .; then
+        mapfile -t pids < <(ss -u -a -p 2>/dev/null | awk -v port=":$UDP_PORT" '$0 ~ port {
+          s=$0; while (match(s,/pid=[0-9]+/)) { pid_str=substr(s,RSTART+4,RLENGTH-4); print pid_str; s=substr(s,RSTART+RLENGTH) }
+        }' | sort -u)
+        for pid in "${pids[@]}"; do
+          owner=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
+          if [[ "$owner" = "$user" ]]; then
+            udp_proc=$((udp_proc + 1))
+          fi
+        done
+      fi
+    fi
 
     # ===== TOTAL CONEXIONES =====
     conex=$((sshd + drop + ovp + udp_proc))
 
     # ===== TIEMPO DE ACTIVIDAD =====
     if [[ $conex -gt 0 ]]; then
-      # Buscamos el PID del proceso más antiguo del usuario
       pid=$(ps -u "$user" -o pid= | head -n 1 | xargs)
       if [[ ! -z "$pid" ]]; then
         timerr=$(ps -o etime= -p "$pid" | sed 's/^ *//')
@@ -835,12 +924,37 @@ sshmonitor(){
     estado_txt=$( [[ $conex -eq 0 ]] && echo "OFFLINE" || echo "ONLINE" )
     [[ $conex -eq 0 ]] && estado_color=$R || estado_color=$G
 
-    printf " ${Y}%-14s${N} ${estado_color}%-12s${N} ${G}%-16s${N} ${Y}%-10s${N}\n" \
-    "$user" "$estado_txt" "$conex/$s2ssh" "$timerr"
+    # Mostrar conexiones totales y (Límite/UDPcount) en la columna
+    printf " ${Y}%-14s${N} ${estado_color}%-12s${N} ${G}%-18s${N} ${Y}%-10s${N}\n" \
+      "$user" "$estado_txt" "$conex ($s2ssh/$udp_proc)" "$timerr"
   done
 
+  # ===== Usuarios UDP detectados que NO tienen cuenta del sistema (posible clientes externos o usuarios distintos) =====
+  if [[ -f "$UDP_LOG_FILE" ]]; then
+    # Construir listado de usuarios detectados en el log que no coinciden con usuarios del sistema
+    declare -A seen_sys
+    for u in $(echo "$cat_users" | awk -F: '{print $1}'); do seen_sys["$u"]=1; done
+
+    extra_users=()
+    for u in "${!UDP_USER_COUNT[@]}"; do
+      if [[ -z "${seen_sys["$u"]:-}" ]]; then
+        extra_users+=("$u|${UDP_USER_IPS[$u]:-}")
+      fi
+    done
+
+    if ((${#extra_users[@]} > 0)); then
+      echo -e "${R}────────────────────────── / / / ──────────────────────────${N}"
+      echo -e "${W}Usuarios UDP detectados (sin cuenta sistema):${N}"
+      for e in "${extra_users[@]}"; do
+        user="${e%%|*}"
+        ips="${e#*|}"
+        echo -e "  ${Y}${user}${N}  IPs:${G}${ips}${N}  Conexiones:${C}${UDP_USER_COUNT[$user]:-0}${N}"
+      done
+    fi
+  fi
+
   # ===== INFO EXTRA DE UDP CUSTOM (Global) =====
-  if systemctl is-active --quiet udp-custom; then
+  if systemctl list-units --type=service --state=running 2>/dev/null | grep -q "udp-custom"; then
      udp_total=$(ss -u -a 2>/dev/null | grep -cE ":$UDP_PORT\b")
      echo -e "${R}────────────────────────── / / / ──────────────────────────${N}"
      echo -e "${W} UDP CUSTOM ACTIVO | PUERTO: ${Y}$UDP_PORT${W} | CONEXIONES TOTALES: ${G}$udp_total${N}"
