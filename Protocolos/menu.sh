@@ -44,6 +44,24 @@ check_stunnel_status() { ( is_active_systemd stunnel4 || pgrep -x stunnel4 >/dev
 check_squid_status() { ( is_active_systemd squid || is_active_systemd squid3 ) && echo "true" || echo "false"; }
 check_haproxy_mux_status() { ( is_active_systemd haproxy-mux || is_active_systemd haproxy ) && echo "true" || echo "false"; }
 
+# Añadido: comprobación de estado para SlowDNS / dnstt
+check_slowdns_status() {
+  # Comprobar servicios systemd comunes usados para dnstt (adaptar si usas otros nombres)
+  if is_active_systemd dnstt.service || is_active_systemd dnstt-client.service || is_active_systemd dnstt-server.service \
+     || is_active_systemd sn-dnstt-client.service || is_active_systemd sn-dnstt-server.service; then
+    echo "true"
+    return 0
+  fi
+
+  # Si no hay unidad systemd, comprobar procesos en ejecución
+  if pgrep -f 'dnstt|slowdns|dnstt-client|dnstt-server' >/dev/null 2>&1; then
+    echo "true"
+    return 0
+  fi
+
+  echo "false"
+}
+
 py_socks_units() {
   systemctl list-units --type=service --all 2>/dev/null \
     | awk '{print $1}' \
@@ -88,7 +106,7 @@ main_menu_single() {
   while true; do
     clear
 
-    local ssh_st dropbear_st stunnel_st squid_st socks_st v2_st udp_st badvpn_st haproxy_st
+    local ssh_st dropbear_st stunnel_st squid_st socks_st v2_st udp_st badvpn_st haproxy_st slowdns_st
 
     ssh_st="$(status_badge "$(check_ssh_status)")"
     dropbear_st="$(status_badge "$(check_dropbear_status)")"
@@ -99,6 +117,7 @@ main_menu_single() {
     udp_st="$(status_badge "$(check_udp_custom_status)")"
     badvpn_st="$(status_badge "$(check_badvpn_status)")"
     haproxy_st="$(status_badge "$(check_haproxy_mux_status)")"
+    slowdns_st="$(status_badge "$(check_slowdns_status)")"
  #   websoket_st="$(status_badge "$(check_websoket_status)")"
     title_box "INSTALADORES"
     echo ""
@@ -112,6 +131,7 @@ main_menu_single() {
     print_item_list "07" "UDP-CUSTOM" "$udp_st"
     print_item_list "08" "V2RAY" "$v2_st"
     print_item_list "09" "HAPROXY MUX" "$haproxy_st"
+    print_item_list "10" "SLOWDNS" "$slowdns_st"
 #    print_item_list "10" "WEBSOKET" "$websoket_st"
 
     echo ""
@@ -133,6 +153,7 @@ main_menu_single() {
       07|7) run_proto "Protocolos/udp-custom.sh" ;;
       08|8) run_proto "Protocolos/v2ray.sh" ;;
       09|9) run_proto "Protocolos/haproxy_mux.sh" ;;
+      10|10) run_proto "Protocolos/slowdns.sh" ;;
   #    10|10 run_proto "Protocolos/websoket/websoket.sh"
       00|0) break ;;
       *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
