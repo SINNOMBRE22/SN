@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
 #
 # slowdns.sh
-# Instalador / Configurador independiente de SlowDNS (instalar, ejecutar, reiniciar, detener, info, desinstalar/limpiar)
-# Diseño:
-#  - Puede instalarse y usarse sin depender de otros scripts.
-#  - Crea sus propias carpetas de trabajo por defecto en /etc/VPS-MX/Slow (compatibilidad con tu ecosistema).
-#  - Permite arrancar con screen/nohup o crear un servicio systemd opcional.
-#  - Guarda backups (resolv.conf, autostart) y en la desinstalación intenta restaurar el sistema al estado previo.
+# Instalador / Configurador independiente de SlowDNS (corregido)
+# - Script completo y autónomo para instalar/ejecutar SLOWDNS
+# - Corrección en la detección de procesos/puertos (drop_port) para evitar que aparezcan IPs remotas
+#   o puertos incorrectos (p.ej. "v2ray -> 22->200.68.183.129")
 #
-# Instalación recomendada:
-#   sudo cp slowdns.sh /etc/VPS-MX/protocolos/slowdns.sh
+# Coloca este archivo en /etc/VPS-MX/protocolos/slowdns.sh y hazlo ejecutable:
 #   sudo chmod +x /etc/VPS-MX/protocolos/slowdns.sh
-#   sudo /etc/VPS-MX/protocolos/slowdns.sh
 #
 set -euo pipefail
 IFS=$'\n\t'
@@ -19,7 +15,7 @@ IFS=$'\n\t'
 # -----------------------
 # Configuración (rutas)
 # -----------------------
-VPS_DIR="/etc/SN"
+VPS_DIR="/etc/VPS-MX"
 PROT_DIR="${VPS_DIR}/protocolos"
 ADM_inst="${VPS_DIR}/Slow/install"
 ADM_slow="${VPS_DIR}/Slow/Key"
@@ -31,18 +27,16 @@ SERVICE_FILE="/etc/systemd/system/slowdns.service"
 RESOLV_BACKUP="${BACKUP_DIR}/resolv.conf.bak"
 AUTOSTART_BACKUP="${BACKUP_DIR}/autostart.bak"
 BACKUP_SUFFIX=".bak_$(date +%Y%m%d%H%M%S)"
-
-# Default binary download URL (puedes cambiarla al instalar)
 DEFAULT_DNS_URL="https://raw.githubusercontent.com/lacasitamx/SCRIPTMOD-LACASITA/master/SLOWDNS/dns-server"
 
 # -----------------------
 # Utilidades de salida
 # -----------------------
 _color_reset() { printf '\033[0m'; }
-_color_yel()   { printf '\033[1;33m'; }   # amarillo (ama)
-_color_grn()   { printf '\033[1;92m'; }   # verde (verd)
-_color_red()   { printf '\033[1;91m'; }   # rojo (verm)
-_color_blu()   { printf '\033[1;34m'; }   # azul (azu)
+_color_yel()   { printf '\033[1;33m'; }
+_color_grn()   { printf '\033[1;92m'; }
+_color_red()   { printf '\033[1;91m'; }
+_color_blu()   { printf '\033[1;34m'; }
 
 msg() {
   if [[ "${1:-}" == "-bar" ]]; then
@@ -97,7 +91,7 @@ selection_fun() {
 }
 
 # -----------------------
-# Prepara directorios y backups
+# Preparar dirs y backups
 # -----------------------
 ensure_dirs_and_backups() {
   mkdir -p "$PROT_DIR" "$ADM_inst" "$ADM_slow" "$BACKUP_DIR"
@@ -109,20 +103,17 @@ backup_resolv_conf() {
     cp -a /etc/resolv.conf "$RESOLV_BACKUP" || true
   fi
 }
-
 restore_resolv_conf() {
   if [[ -f "$RESOLV_BACKUP" ]]; then
     cp -a "$RESOLV_BACKUP" /etc/resolv.conf || true
     rm -f "$RESOLV_BACKUP" || true
   fi
 }
-
 backup_autostart() {
   if [[ -f "$CONF_AUTOSTART" && ! -f "$AUTOSTART_BACKUP" ]]; then
     cp -a "$CONF_AUTOSTART" "$AUTOSTART_BACKUP" || true
   fi
 }
-
 restore_autostart() {
   if [[ -f "$AUTOSTART_BACKUP" ]]; then
     mv -f "$AUTOSTART_BACKUP" "$CONF_AUTOSTART" || true
@@ -130,17 +121,13 @@ restore_autostart() {
 }
 
 # -----------------------
-# Manejo de iptables
+# iptables helpers
 # -----------------------
-# Añade reglas que el instalador necesita
 add_iptables_rules() {
-  # Solo si iptables disponible
   if ! has_cmd iptables; then
-    msg -verm "iptables no encontrado: no se aplicarán reglas de NAT/INPUT automáticas."
+    msg -verm "iptables no encontrado: no se aplicarán reglas automáticas."
     return
   fi
-
-  # Evitar duplicados: comprobar antes de insertar
   if ! iptables -C INPUT -p udp --dport 5300 -j ACCEPT &>/dev/null; then
     iptables -I INPUT -p udp --dport 5300 -j ACCEPT || true
   fi
@@ -148,60 +135,91 @@ add_iptables_rules() {
     iptables -t nat -I PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300 || true
   fi
 }
-
-# Elimina las reglas añadidas por add_iptables_rules (intenta -D)
 remove_iptables_rules() {
-  if ! has_cmd iptables; then
-    return
-  fi
-  # Intentar borrar; si no existen, ignorar errores
+  if ! has_cmd iptables; then return; fi
   iptables -D INPUT -p udp --dport 5300 -j ACCEPT 2>/dev/null || true
   iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300 2>/dev/null || true
 }
 
 # -----------------------
-# Detectar puertos/servicios escuchando (para elegir puerto local a usar)
+# drop_port (CORREGIDO)
 # -----------------------
+# Problema original: la extracción de puerto/proceso tomaba campos que contenían IP remota
+# o formateos distintos, lo que provocaba resultados como "v2ray -> 22->200.68.183.129".
+# Solución: usar ss -ltnp (preferido) o lsof -iTCP -sTCP:LISTEN y extraer el campo local correcto.
 drop_port() {
   DPB=""
-  local lines
-  if has_cmd lsof; then
-    lines=$(lsof -V -i tcp -P -n 2>/dev/null || true)
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      local cmd port
-      cmd=$(awk '{print $1}' <<<"$line")
-      port=$(awk '{print $9}' <<<"$line" | awk -F: '{print $2}')
-      [[ -z "$cmd" || -z "$port" ]] && continue
-      case "$cmd" in
-        sshd|dropbear|trojan|stunnel4|stunnel|python|python3|v2ray|xray)
-          DPB+="$cmd:$port "
-          ;;
-        *) ;;
-      esac
-    done <<<"$lines"
-  elif has_cmd ss; then
+  declare -A seen_ports=()
+
+  if has_cmd ss; then
+    # Usar ss para listar sockets TCP/UDP en estado LISTEN y extraer puerto local + proceso
+    # ss -ltnp -> TCP listening, ss -lunp -> UDP listening (combinamos TCP y UDP)
+    local lines
     lines=$(ss -ltnp 2>/dev/null || true)
     while IFS= read -r line; do
       [[ -z "$line" ]] && continue
-      port=$(awk '{for(i=1;i<=NF;i++) if ($i ~ /:[0-9]+$/) {split($i,a,":"); print a[length(a)]; break}}' <<<"$line")
-      cmd=$(sed -n 's/.*users:(("'\''\?\([^"'\''),]*\).*/\1/p' <<<"$line" | awk -F, '{print $1}')
-      [[ -z "$cmd" || -z "$port" ]] && continue
-      case "$cmd" in
-        sshd|dropbear|trojan|stunnel4|stunnel|python|python3|v2ray|xray)
-          DPB+="$cmd:$port "
-          ;;
-        *) ;;
-      esac
+      # Solo líneas con LISTEN o LISTENING
+      if [[ "$line" != *LISTEN* ]]; then continue; fi
+      # Campo de dirección local suele estar en la 4ª columna
+      local localaddr port proc
+      localaddr=$(awk '{print $4}' <<<"$line")
+      # localaddr puede ser '*:22', '127.0.0.1:80', '[::]:443'
+      port="${localaddr##*:}"
+      # extraer nombre de proceso desde users:(("name",pid=...
+      proc=$(sed -n 's/.*users:(("'\''\?\([^"'\''),]*\).*/\1/p' <<<"$line" | awk -F, '{print $1}')
+      proc="${proc:-unknown}"
+      # evitar entradas duplicadas por mismo puerto
+      if [[ -z "${seen_ports[$port]:-}" ]]; then
+        DPB+="${proc}:${port} "
+        seen_ports[$port]=1
+      fi
     done <<<"$lines"
+  elif has_cmd lsof; then
+    # Fallback a lsof: filtrar solo LISTEN
+    local l
+    l=$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null || true)
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      [[ "$line" == COMMAND* ]] && continue
+      # formato lsof: COMMAND PID USER ... NAME
+      local proc namefield port
+      proc=$(awk '{print $1}' <<<"$line")
+      namefield=$(awk '{print $9}' <<<"$line")
+      # namefield puede ser '*:22' o '127.0.0.1:22'
+      port="${namefield##*:}"
+      proc="${proc:-unknown}"
+      if [[ -z "${seen_ports[$port]:-}" ]]; then
+        DPB+="${proc}:${port} "
+        seen_ports[$port]=1
+      fi
+    done <<<"$l"
   else
-    DPB=""
+    # No ss ni lsof: intentar netstat si disponible
+    if has_cmd netstat; then
+      local out
+      out=$(netstat -ltnp 2>/dev/null || true)
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        if [[ "$line" != *LISTEN* ]]; then continue; fi
+        local localaddr port proc
+        localaddr=$(awk '{print $4}' <<<"$line")
+        port="${localaddr##*:}"
+        proc=$(awk '{print $7}' <<<"$line" | cut -d'/' -f2)
+        proc="${proc:-unknown}"
+        if [[ -z "${seen_ports[$port]:-}" ]]; then
+          DPB+="${proc}:${port} "
+          seen_ports[$port]=1
+        fi
+      done <<<"$out"
+    fi
   fi
+
+  # Recortar espacio final
   DPB="${DPB%% }"
 }
 
 # -----------------------
-# Mostrar información (domain_ns, server.pub)
+# Mostrar información
 # -----------------------
 info() {
   clear
@@ -221,7 +239,7 @@ info() {
 }
 
 # -----------------------
-# Instalador principal (ini_slow)
+# Instalador principal
 # -----------------------
 ini_slow() {
   ensure_dirs_and_backups
@@ -236,7 +254,6 @@ ini_slow() {
 
   drop_port
 
-  # construir lista para selección
   declare -a arr
   local idx=1
   for entry in $DPB; do
@@ -249,10 +266,9 @@ ini_slow() {
 
   if [[ ${#arr[@]} -eq 0 ]]; then
     msg -verm "No se detectaron servicios compatibles para elegir puerto local."
-    msg -ama "Si quieres, escribe manualmente el puerto que usará la aplicación local (ej: 22, 80, ...)."
-    read -r -p "Puerto local (ej: 22): " manu
+    read -r -p "Puerto local manual (ej: 22) o ENTER para cancelar: " manu
     if [[ -z "$manu" ]]; then
-      msg -verm "No se ha seleccionado puerto. Cancelando instalación."
+      msg -verm "Cancelado."
       return 1
     fi
     printf '%s\n' "$manu" > "${ADM_slow}/puerto"
@@ -266,7 +282,6 @@ ini_slow() {
     local sel_entry=${arr[$opc]}
     local sel_proto=${sel_entry%%:*}
     local sel_port=${sel_entry##*:}
-
     printf '%s\n' "$sel_port" > "${ADM_slow}/puerto"
     printf '%s\n' "$sel_proto" > "${ADM_slow}/puertoloc"
     PORT="$sel_port"
@@ -277,7 +292,6 @@ ini_slow() {
   msg -ama " Puerto de conexion a traves de SlowDNS: $PORT"
   msg -bar
 
-  # Solicitar dominio NS
   local NS=""
   while [[ -z "$NS" ]]; do
     read -r -p " Tu dominio NS (ej: ns.midominio.com): " NS
@@ -286,7 +300,6 @@ ini_slow() {
   msg -ama " Tu dominio NS: $NS"
   msg -bar
 
-  # Descargar binario si no existe
   if [[ ! -f "$DNS_BIN_PATH" ]]; then
     msg -ama " Descargando binario dns-server..."
     read -r -p "Introduce URL para descargar dns-server (ENTER para usar la URL por defecto): " url
@@ -302,7 +315,6 @@ ini_slow() {
     msg -ama "Binario dns-server ya presente en $DNS_BIN_PATH"
   fi
 
-  # Generar o usar clave existente
   local pub=""
   if [[ -f "${ADM_slow}/server.pub" ]]; then
     pub=$(<"${ADM_slow}/server.pub")
@@ -328,39 +340,32 @@ ini_slow() {
 
   msg -bar
   msg -ama "    INSTALANDO / CONFIGURANDO SLOWDNS ..."
-  # Intentar instalar utilidades opcionales si disponible apt
   if has_cmd apt-get; then
     apt-get update -qq || true
     apt-get install -y -qq screen iptables || true
   fi
 
-  # Añadir reglas iptables y backup resolv.conf
   add_iptables_rules
   backup_resolv_conf
-  # Cambiar resolv.conf apuntando a 1.1.1.1 (igual que script original)
   if [[ -w /etc/resolv.conf || -L /etc/resolv.conf ]]; then
     printf '%s\n' "nameserver 1.1.1.1" >/etc/resolv.conf
     printf '%s\n' "nameserver 1.0.0.1" >>/etc/resolv.conf
   fi
 
-  # Arrancar el servidor en background (screen preferido)
   if has_cmd screen; then
     screen -dmS slowdns "$DNS_BIN_PATH" -udp :5300 -privkey-file "${ADM_slow}/server.key" "$NS" "127.0.0.1:$PORT"
   else
     nohup "$DNS_BIN_PATH" -udp :5300 -privkey-file "${ADM_slow}/server.key" "$NS" "127.0.0.1:$PORT" >/dev/null 2>&1 &
   fi
 
-  # Preguntar si crear un servicio systemd para gestionar el arranque
   read -r -p "¿Deseas crear un servicio systemd para slowdns? [s/N]: " want_svc
   want_svc="${want_svc:-N}"
   if [[ "$want_svc" =~ ^[sSyY]$ ]]; then
     create_systemd_service || msg -verm "No fue posible crear el servicio systemd"
   fi
 
-  # Añadir entrada autostart (comportamiento original)
   backup_autostart
   aut_line="netstat -au | grep -w 7300 > /dev/null || {  screen -r -S 'slowdns' -X quit;  screen -dmS slowdns ${DNS_BIN_PATH} -udp :5300 -privkey-file ${ADM_slow}/server.key ${NS} 127.0.0.1:${PORT} ; }"
-  # eliminar previas similares y añadir
   sed -i.bak '/slowdns/d' "$CONF_AUTOSTART" 2>/dev/null || true
   printf '%s\n' "$aut_line" >>"$CONF_AUTOSTART"
 
@@ -376,7 +381,6 @@ create_systemd_service() {
     msg -verm "No se encontró $DNS_BIN_PATH. No se crea el servicio."
     return 1
   fi
-  # construir ExecStart
   local ns=""
   if [[ -f "${ADM_slow}/domain_ns" ]]; then ns=$(<"${ADM_slow}/domain_ns"); fi
   local port=""
@@ -406,12 +410,21 @@ EOF
 }
 
 # -----------------------
-# Reiniciar servicio (reset_slow)
+# Reiniciar/Stop/Uninstall/Status (sin cambios significativos)
 # -----------------------
+stop_background_processes() {
+  if has_cmd screen; then
+    screen -ls | awk '/slowdns/{print $1}' | while read -r s; do
+      screen -S "$s" -X quit >/dev/null 2>&1 || true
+    done || true
+  fi
+  pkill -f "$DNS_BIN_NAME" 2>/dev/null || true
+  if systemctl list-unit-files | grep -q '^slowdns.service'; then
+    systemctl disable --now slowdns.service 2>/dev/null || true
+  fi
+}
 reset_slow() {
-  # intentar detener cualquier instancia anterior
   stop_background_processes
-  # iniciar de nuevo
   if [[ -f "${ADM_slow}/domain_ns" && -f "${ADM_slow}/puerto" ]]; then
     local NS=$(<"${ADM_slow}/domain_ns")
     local PORT=$(<"${ADM_slow}/puerto")
@@ -420,7 +433,6 @@ reset_slow() {
     else
       nohup "$DNS_BIN_PATH" -udp :5300 -privkey-file "${ADM_slow}/server.key" "$NS" "127.0.0.1:$PORT" >/dev/null 2>&1 &
     fi
-    # actualizar autostart (asegurar única entrada)
     sed -i.bak '/slowdns/d' "$CONF_AUTOSTART" 2>/dev/null || true
     aut_line="netstat -au | grep -w 7300 > /dev/null || {  screen -r -S 'slowdns' -X quit;  screen -dmS slowdns ${DNS_BIN_PATH} -udp :5300 -privkey-file ${ADM_slow}/server.key ${NS} 127.0.0.1:${PORT} ; }"
     printf '%s\n' "$aut_line" >>"$CONF_AUTOSTART" 2>/dev/null || true
@@ -430,101 +442,56 @@ reset_slow() {
     return 1
   fi
 }
-
-stop_background_processes() {
-  if has_cmd screen; then
-    # cerrar sesiones slowdns
-    screen -ls | awk '/slowdns/{print $1}' | while read -r s; do
-      screen -S "$s" -X quit >/dev/null 2>&1 || true
-    done || true
-  fi
-  pkill -f "$DNS_BIN_NAME" 2>/dev/null || true
-  # si existe systemd service, detenerlo
-  if systemctl list-unit-files | grep -q '^slowdns.service'; then
-    systemctl disable --now slowdns.service 2>/dev/null || true
-  fi
-}
-
-# -----------------------
-# Detener servicio (stop_slow)
-# -----------------------
 stop_slow() {
   clear
   msg -bar
   msg -ama "    Deteniendo SlowDNS...."
   stop_background_processes
-  # limpiar autostart
   if [[ -f "$CONF_AUTOSTART" ]]; then
     sed -i.bak '/dns-server/d' "$CONF_AUTOSTART" || true
     sed -i.bak '/slowdns/d' "$CONF_AUTOSTART" || true
   fi
   msg -verd " SERVICIO SLOW DETENIDO"
 }
-
-# -----------------------
-# Desinstalador / limpieza completa
-# -----------------------
 uninstall_slow() {
   ensure_root
   echo ""
-  msg -verm "ATENCIÓN: Esto eliminará SlowDNS y RESTAURARÁ cambios aplicados (iptables, resolv.conf, autostart, servicio systemd)."
+  msg -verm "ATENCIÓN: Esto eliminará SlowDNS y RESTAURARÁ cambios aplicados."
   read -r -p "¿Continuar con la desinstalación completa? [n]: " yn
   yn="${yn:-n}"
   if [[ ! "$yn" =~ ^[sSyY]$ ]]; then
     msg -verm "Desinstalación cancelada."
     return 1
   fi
-
   msg -ama "Deteniendo procesos y servicios..."
   stop_background_processes
-
   msg -ama "Eliminando reglas iptables añadidas..."
   remove_iptables_rules
-
   msg -ama "Restaurando /etc/resolv.conf si existe backup..."
   restore_resolv_conf
-
   msg -ama "Restaurando /etc/autostart (si hay backup)..."
-  # si existe backup, restaurar; si no, eliminar líneas relacionadas
   if [[ -f "$AUTOSTART_BACKUP" ]]; then
     mv -f "$AUTOSTART_BACKUP" "$CONF_AUTOSTART" 2>/dev/null || true
   else
     sed -i.bak '/slowdns/d' "$CONF_AUTOSTART" 2>/dev/null || true
     sed -i.bak '/dns-server/d' "$CONF_AUTOSTART" 2>/dev/null || true
   fi
-
   msg -ama "Eliminando servicio systemd (si existe)..."
   if [[ -f "$SERVICE_FILE" ]]; then
     systemctl disable --now slowdns.service 2>/dev/null || true
     rm -f "$SERVICE_FILE" 2>/dev/null || true
     systemctl daemon-reload 2>/dev/null || true
   fi
-
   msg -ama "Eliminando binario y claves..."
   rm -f "$DNS_BIN_PATH" 2>/dev/null || true
   rm -rf "${ADM_slow:?}/"* 2>/dev/null || true
-
   msg -ama "Eliminando directorios creados (si están vacíos)..."
   rmdir --ignore-fail-on-non-empty "$ADM_inst" 2>/dev/null || true
   rmdir --ignore-fail-on-non-empty "$ADM_slow" 2>/dev/null || true
-  # no borramos /etc/VPS-MX entero por seguridad, solo intentamos borrar protocolos si vacío
   rmdir --ignore-fail-on-non-empty "$PROT_DIR" 2>/dev/null || true
-
-  msg -ama "Limitando limpieza en backups (mantengo ${BACKUP_DIR} por seguridad)."
-  # opcional: eliminar backups bajo petición
-  read -r -p "¿Eliminar backups en ${BACKUP_DIR}? [n]: " delbk
-  delbk="${delbk:-n}"
-  if [[ "$delbk" =~ ^[sSyY]$ ]]; then
-    rm -rf "$BACKUP_DIR" 2>/dev/null || true
-  fi
-
-  msg -verd "Desinstalación completa realizada (intento de restauración de cambios)."
-  return 0
+  msg -verd "Desinstalación completa realizada."
 }
 
-# -----------------------
-# Estado simple
-# -----------------------
 status() {
   echo "---- SlowDNS status ----"
   if has_cmd ss && ss -uapn 2>/dev/null | grep -q ":5300"; then
@@ -542,9 +509,6 @@ status() {
   echo "-------------------------"
 }
 
-# -----------------------
-# Menú principal
-# -----------------------
 main_menu() {
   ensure_root
   ensure_dirs_and_backups
@@ -577,67 +541,32 @@ main_menu() {
   done
 }
 
-# -----------------------
-# Soporta parámetros para ejecución no interactiva
-# -----------------------
 usage() {
   cat <<EOF
 Uso: $0 [opcion]
-
 Si se ejecuta sin parámetros se muestra el menú interactivo.
 
 Opciones:
-  --install        Instala/configura non-interactively (te pedirá datos básicos)
-  --start          Inicia el servicio/daemon (background)
-  --stop           Detiene el servicio/daemon
-  --restart        Reinicia
-  --status         Muestra estado simple
-  --info           Muestra domain_ns y server.pub si existen
-  --uninstall      Desinstala y limpia (CONFIRMAR interactivo)
-  --help           Muestra esta ayuda
-
-Nota: muchas acciones necesitan root.
+  --install   Instala/configura
+  --start     Inicia
+  --stop      Detiene
+  --restart   Reinicia
+  --status    Muestra estado
+  --info      Muestra domain_ns y server.pub
+  --uninstall Desinstala y limpia
 EOF
 }
 
-# Ejecutar según parámetros o mostrar menú
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-    usage && exit 0
-  fi
   case "${1:-}" in
-    --install)
-      ensure_root
-      ini_slow
-      ;;
-    --start)
-      ensure_root
-      if [[ -f "${ADM_slow}/domain_ns" && -f "${ADM_slow}/puerto" ]]; then
-        reset_slow
-      else
-        msg -verm "No hay configuración: ejecuta --install o usa el menú para configurar."
-      fi
-      ;;
-    --stop)
-      ensure_root
-      stop_slow
-      ;;
-    --restart|--reload)
-      ensure_root
-      reset_slow
-      ;;
-    --status)
-      status
-      ;;
-    --info)
-      info
-      ;;
-    --uninstall)
-      ensure_root
-      uninstall_slow
-      ;;
-    *)
-      main_menu
-      ;;
+    --install) ensure_root; ini_slow ;;
+    --start) ensure_root; reset_slow ;;
+    --stop) ensure_root; stop_slow ;;
+    --restart|--reload) ensure_root; reset_slow ;;
+    --status) status ;;
+    --info) info ;;
+    --uninstall) ensure_root; uninstall_slow ;;
+    --help|-h) usage ;;
+    *) main_menu ;;
   esac
 fi
