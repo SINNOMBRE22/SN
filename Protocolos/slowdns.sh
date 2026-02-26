@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
 #
 # slowdns.sh
-# Instalador / Configurador independiente de SlowDNS (corregido)
-# - Script completo y autónomo para instalar/ejecutar SLOWDNS
-# - Corrección en la detección de procesos/puertos (drop_port) para evitar que aparezcan IPs remotas
-#   o puertos incorrectos (p.ej. "v2ray -> 22->200.68.183.129")
-#
-# Coloca este archivo en /etc/VPS-MX/protocolos/slowdns.sh y hazlo ejecutable:
-#   sudo chmod +x /etc/VPS-MX/protocolos/slowdns.sh
+# Instalador / Configurador independiente de SlowDNS (corregido para seleccionar SSH en puerto 22 automáticamente)
 #
 set -euo pipefail
 IFS=$'\n\t'
@@ -15,7 +9,7 @@ IFS=$'\n\t'
 # -----------------------
 # Configuración (rutas)
 # -----------------------
-VPS_DIR="/etc/VPS-MX"
+VPS_DIR="/etc/SN"
 PROT_DIR="${VPS_DIR}/protocolos"
 ADM_inst="${VPS_DIR}/Slow/install"
 ADM_slow="${VPS_DIR}/Slow/Key"
@@ -91,7 +85,7 @@ selection_fun() {
 }
 
 # -----------------------
-# Preparar dirs y backups
+# Prepara dirs y backups
 # -----------------------
 ensure_dirs_and_backups() {
   mkdir -p "$PROT_DIR" "$ADM_inst" "$ADM_slow" "$BACKUP_DIR"
@@ -142,59 +136,62 @@ remove_iptables_rules() {
 }
 
 # -----------------------
-# drop_port (CORREGIDO)
+# drop_port (mejorada) — detecta puertos locales escuchando
 # -----------------------
-# Problema original: la extracción de puerto/proceso tomaba campos que contenían IP remota
-# o formateos distintos, lo que provocaba resultados como "v2ray -> 22->200.68.183.129".
-# Solución: usar ss -ltnp (preferido) o lsof -iTCP -sTCP:LISTEN y extraer el campo local correcto.
 drop_port() {
   DPB=""
   declare -A seen_ports=()
 
   if has_cmd ss; then
-    # Usar ss para listar sockets TCP/UDP en estado LISTEN y extraer puerto local + proceso
-    # ss -ltnp -> TCP listening, ss -lunp -> UDP listening (combinamos TCP y UDP)
     local lines
     lines=$(ss -ltnp 2>/dev/null || true)
     while IFS= read -r line; do
       [[ -z "$line" ]] && continue
-      # Solo líneas con LISTEN o LISTENING
+      # Considerar solo líneas con LISTEN (tcp)
       if [[ "$line" != *LISTEN* ]]; then continue; fi
-      # Campo de dirección local suele estar en la 4ª columna
       local localaddr port proc
       localaddr=$(awk '{print $4}' <<<"$line")
-      # localaddr puede ser '*:22', '127.0.0.1:80', '[::]:443'
       port="${localaddr##*:}"
-      # extraer nombre de proceso desde users:(("name",pid=...
       proc=$(sed -n 's/.*users:(("'\''\?\([^"'\''),]*\).*/\1/p' <<<"$line" | awk -F, '{print $1}')
       proc="${proc:-unknown}"
-      # evitar entradas duplicadas por mismo puerto
+      # normalizar proc (ssh saltaría como sshd)
+      proc="${proc#\"}"; proc="${proc%\"}"
       if [[ -z "${seen_ports[$port]:-}" ]]; then
         DPB+="${proc}:${port} "
         seen_ports[$port]=1
       fi
     done <<<"$lines"
+    # También comprobar UDP listening (opcional) - combinamos si es necesario
+    lines=$(ss -lunp 2>/dev/null || true)
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      # No filtrar por LISTEN para UDP (no aparece); extraer localaddr campo 4
+      localaddr=$(awk '{print $4}' <<<"$line")
+      port="${localaddr##*:}"
+      proc=$(sed -n 's/.*users:(("'\''\?\([^"'\''),]*\).*/\1/p' <<<"$line" | awk -F, '{print $1}')
+      proc="${proc:-unknown}"
+      proc="${proc#\"}"; proc="${proc%\"}"
+      if [[ -n "$port" && -z "${seen_ports[$port]:-}" ]]; then
+        DPB+="${proc}:${port} "
+        seen_ports[$port]=1
+      fi
+    done <<<"$lines"
   elif has_cmd lsof; then
-    # Fallback a lsof: filtrar solo LISTEN
     local l
     l=$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null || true)
     while IFS= read -r line; do
       [[ -z "$line" ]] && continue
       [[ "$line" == COMMAND* ]] && continue
-      # formato lsof: COMMAND PID USER ... NAME
       local proc namefield port
       proc=$(awk '{print $1}' <<<"$line")
       namefield=$(awk '{print $9}' <<<"$line")
-      # namefield puede ser '*:22' o '127.0.0.1:22'
       port="${namefield##*:}"
-      proc="${proc:-unknown}"
-      if [[ -z "${seen_ports[$port]:-}" ]]; then
+      if [[ -n "$port" && -z "${seen_ports[$port]:-}" ]]; then
         DPB+="${proc}:${port} "
         seen_ports[$port]=1
       fi
     done <<<"$l"
   else
-    # No ss ni lsof: intentar netstat si disponible
     if has_cmd netstat; then
       local out
       out=$(netstat -ltnp 2>/dev/null || true)
@@ -206,7 +203,7 @@ drop_port() {
         port="${localaddr##*:}"
         proc=$(awk '{print $7}' <<<"$line" | cut -d'/' -f2)
         proc="${proc:-unknown}"
-        if [[ -z "${seen_ports[$port]:-}" ]]; then
+        if [[ -n "$port" && -z "${seen_ports[$port]:-}" ]]; then
           DPB+="${proc}:${port} "
           seen_ports[$port]=1
         fi
@@ -214,7 +211,6 @@ drop_port() {
     fi
   fi
 
-  # Recortar espacio final
   DPB="${DPB%% }"
 }
 
@@ -239,7 +235,8 @@ info() {
 }
 
 # -----------------------
-# Instalador principal
+# Instalador principal (ini_slow)
+# - Añadida selección automática para sshd:22 (prefiere ssh si existe)
 # -----------------------
 ini_slow() {
   ensure_dirs_and_backups
@@ -264,27 +261,47 @@ ini_slow() {
     ((idx++))
   done
 
-  if [[ ${#arr[@]} -eq 0 ]]; then
-    msg -verm "No se detectaron servicios compatibles para elegir puerto local."
-    read -r -p "Puerto local manual (ej: 22) o ENTER para cancelar: " manu
-    if [[ -z "$manu" ]]; then
-      msg -verm "Cancelado."
-      return 1
+  # NUEVO: Si se detecta sshd:22 o ssh:22 auto-seleccionamos para usar SSH
+  local auto_selected=0
+  if [[ -n "$DPB" ]]; then
+    for e in $DPB; do
+      case "$e" in
+        sshd:22|ssh:22)
+          # seleccionar sshd 22 automáticamente
+          printf '%s\n' "22" > "${ADM_slow}/puerto"
+          printf '%s\n' "sshd" > "${ADM_slow}/puertoloc"
+          PORT="22"
+          auto_selected=1
+          msg -verd "Se detectó SSH en puerto 22 y se seleccionó automáticamente."
+          ;;
+      esac
+      [[ $auto_selected -eq 1 ]] && break
+    done
+  fi
+
+  if [[ $auto_selected -eq 0 ]]; then
+    if [[ ${#arr[@]} -eq 0 ]]; then
+      msg -verm "No se detectaron servicios compatibles para elegir puerto local."
+      read -r -p "Puerto local manual (ej: 22) o ENTER para cancelar: " manu
+      if [[ -z "$manu" ]]; then
+        msg -verm "Cancelado."
+        return 1
+      fi
+      printf '%s\n' "$manu" > "${ADM_slow}/puerto"
+      printf '%s\n' "manual" > "${ADM_slow}/puertoloc"
+      PORT="$manu"
+    else
+      local max=$((idx-1))
+      msg -bar
+      local opc
+      opc=$(selection_fun "$max")
+      local sel_entry=${arr[$opc]}
+      local sel_proto=${sel_entry%%:*}
+      local sel_port=${sel_entry##*:}
+      printf '%s\n' "$sel_port" > "${ADM_slow}/puerto"
+      printf '%s\n' "$sel_proto" > "${ADM_slow}/puertoloc"
+      PORT="$sel_port"
     fi
-    printf '%s\n' "$manu" > "${ADM_slow}/puerto"
-    printf '%s\n' "manual" > "${ADM_slow}/puertoloc"
-    PORT="$manu"
-  else
-    local max=$((idx-1))
-    msg -bar
-    local opc
-    opc=$(selection_fun "$max")
-    local sel_entry=${arr[$opc]}
-    local sel_proto=${sel_entry%%:*}
-    local sel_port=${sel_entry##*:}
-    printf '%s\n' "$sel_port" > "${ADM_slow}/puerto"
-    printf '%s\n' "$sel_proto" > "${ADM_slow}/puertoloc"
-    PORT="$sel_port"
   fi
 
   clear
@@ -410,7 +427,7 @@ EOF
 }
 
 # -----------------------
-# Reiniciar/Stop/Uninstall/Status (sin cambios significativos)
+# Reiniciar/Stop/Uninstall/Status
 # -----------------------
 stop_background_processes() {
   if has_cmd screen; then
