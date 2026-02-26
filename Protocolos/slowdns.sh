@@ -1,209 +1,128 @@
-#!/bin/bash
+#!/usr/bin/env bash
+export DEBIAN_FRONTEND=noninteractive
 
 # ==================================================
-#  SLOWDNS INDEPENDIENTE
-#  Resolución automática de rutas
+# 📌 COLORES OFICIALES SINNOMBRE22
 # ==================================================
-
-[[ $EUID -ne 0 ]] && echo "Ejecuta como root" && exit 1
-
-BASE_DIR="/etc/slowdns"
-ADM_slow="${BASE_DIR}"
-ADM_inst="${BASE_DIR}"
-
-mkdir -p ${ADM_slow}
-
-# ========= COLORES =========
-verde="\033[1;32m"
-rojo="\033[1;31m"
-amarillo="\033[1;33m"
-azul="\033[1;34m"
-reset="\033[0m"
-
-msg() {
-    case $1 in
-        -bar) echo -e "${azul}══════════════════════════════${reset}" ;;
-        -bar3) echo -e "${azul}──────────────────────────────${reset}" ;;
-        -verd) echo -e "${verde}$2${reset}" ;;
-        -verm2) echo -e "${rojo}$2${reset}" ;;
-        -ama) echo -e "${amarillo}$2${reset}" ;;
-        -azu) echo -e "${azul}$2${reset}" ;;
-        -nama) echo -ne "${amarillo}$2${reset}" ;;
-    esac
-}
-
-title() {
-    clear
-    msg -bar
-    echo -e "${amarillo}$1${reset}"
-    msg -bar
-}
-
-print_center() { msg $1 "$2"; }
-
-enter() { echo; read -p "Presiona ENTER para continuar..."; }
-
-selection_fun() { read -p "Seleccione una opción: " opt; echo $opt; }
-
-menu_func() {
-    echo -e "\n[1] $1"
-    echo -e "[2] $2"
-    echo -e "[3] $3"
-    echo -e "[4] $4"
-    echo -e "[0] Salir"
-}
-
-back() { echo; }
+R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
+M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
+BOLD='\033[1m'
+ROJO="\e[31m"; BLANCO="\e[97m"; CYAN="\e[36m"; AMARILLO="\e[33m"; RESET="\e[0m"
 
 # ==================================================
+# 📌 LÍNEA OFICIAL (NO MODIFICAR)
+# ==================================================
+LINEA="${ROJO}══════════════════════════ / / / ══════════════════════════${RESET}"
 
-info(){
-    clear
-    nodata(){
-        msg -bar
-        print_center -ama "SIN INFORMACION SLOWDNS!!!"
-        enter
-    }
-
-    [[ ! -e ${ADM_slow}/domain_ns ]] && nodata && return
-    [[ ! -e ${ADM_slow}/server.pub ]] && nodata && return
-
-    msg -bar
-    print_center -ama "DATOS DE SU CONECCION SLOWDNS"
-    msg -bar
-    msg -ama "Su NS (Nameserver): $(cat ${ADM_slow}/domain_ns)"
-    msg -bar3
-    msg -ama "Su Llave: $(cat ${ADM_slow}/server.pub)"
-    enter
-}
-
-drop_port(){
-    portasVAR=$(lsof -V -i tcp -P -n | grep -v "ESTABLISHED" |grep -v "COMMAND" | grep "LISTEN")
-    unset DPB
-    while read port; do
-        reQ=$(echo ${port}|awk '{print $1}')
-        Port=$(echo ${port} | awk '{print $9}' | awk -F ":" '{print $2}')
-        case ${reQ} in
-            sshd|dropbear|stunnel4|stunnel|python|python3) DPB+=" $reQ:$Port";;
-        esac
-    done <<< "${portasVAR}"
-}
-
-ini_slow(){
-    title "INSTALADOR SLOWDNS"
-
-    drop_port
-    n=1
-    for i in $DPB; do
-        proto=$(echo $i|awk -F ":" '{print $1}')
-        port=$(echo $i|awk -F ":" '{print $2}')
-        echo -e " $(msg -verd "[$n]") $(msg -ama "$proto") $(msg -azu "$port")"
-        drop[$n]=$port
-        num_opc="$n"
-        let n++
+# ==================================================
+# 📌 BARRA DE PROGRESO OFICIAL
+# ==================================================
+barra_progreso() {
+    echo -ne "${CYAN}ESPERANDO ${ROJO}["
+    for ((i=0;i<18;i++)); do
+        echo -ne "#"
+        sleep 0.05
     done
+    echo -e "] ${G}OK${RESET}"
+}
 
-    msg -bar
-    opc=$(selection_fun)
-    echo "${drop[$opc]}" > ${ADM_slow}/puerto
-    PORT=$(cat ${ADM_slow}/puerto)
+# ==================================================
+# 📌 LOGO (NORMAL, NO CENTRADO)
+# ==================================================
+mostrar_logo() {
+    clear
+    echo -e "$LINEA"
 
-    unset NS
-    while [[ -z $NS ]]; do
-        msg -nama "Tu dominio NS: "
-        read NS
-    done
+    LOGO=$(figlet -f slant SlowDNS)
+    echo -e "${AMARILLO}${LOGO}${RESET}"
 
-    echo "$NS" > ${ADM_slow}/domain_ns
+    echo -e "$LINEA"
+    echo -e "${BOLD}${BLANCO}                INSTALADOR OFICIAL SINNOMBRE22                ${RESET}"
+    echo -e "$LINEA"
+}
 
-    if [[ ! -e ${ADM_inst}/dns-server ]]; then
-        msg -nama "Descargando binario..."
-        if wget -O ${ADM_inst}/dns-server https://github.com/rudi9999/ADMRufu/raw/main/Utils/SlowDNS/dns-server &>/dev/null ; then
-            chmod +x ${ADM_inst}/dns-server
-            msg -verd " OK"
+# ==================================================
+# 📌 CONFIGURAR FIREWALL
+# ==================================================
+configurar_firewall() {
+    systemctl enable firewalld >/dev/null 2>&1
+    systemctl start firewalld >/dev/null 2>&1
+
+    firewall-cmd --zone=public --permanent --add-port=53/udp >/dev/null 2>&1
+    firewall-cmd --zone=public --permanent --add-port=5300/udp >/dev/null 2>&1
+    firewall-cmd --reload >/dev/null 2>&1
+}
+
+# ==================================================
+# 📌 CONFIGURAR DNS
+# ==================================================
+configurar_dns() {
+    echo "nameserver 1.1.1.1" > /etc/resolv.conf
+}
+
+# ==================================================
+# 📌 INSTALAR SLOWDNS
+# ==================================================
+instalar_slowdns() {
+
+    echo -e "$LINEA"
+    echo -e "${BOLD}${BLANCO}                    INSTALANDO SLOWDNS                    ${RESET}"
+    echo -e "$LINEA"
+
+    echo
+    barra_progreso
+
+    apt update -y >/dev/null 2>&1
+    apt install wget figlet firewalld -y >/dev/null 2>&1
+
+    mkdir -p /etc/slowdns
+    cd /etc/slowdns || return
+
+    wget -q https://raw.githubusercontent.com/SINNOMBRE22/dnstt/main/dns-server -O dns-server
+    chmod +x dns-server
+
+    configurar_firewall
+    configurar_dns
+
+    echo
+    echo -e "${G}✔ Proceso completado correctamente${RESET}"
+    sleep 2
+}
+
+# ==================================================
+# 📌 MENÚ PRINCIPAL
+# ==================================================
+menu() {
+
+    while true; do
+        mostrar_logo
+        echo
+
+        if command -v dns-server >/dev/null 2>&1; then
+            echo -e "${G}1)${CYAN} Reinstalar SlowDNS${RESET}"
+            echo -e "${G}0)${CYAN} Salir${RESET}"
         else
-            msg -verm2 " FAIL"
-            enter
-            return
+            echo -e "${R}✖ SlowDNS no está instalado${RESET}"
+            echo
+            echo -e "${G}1)${CYAN} Instalar SlowDNS${RESET}"
+            echo -e "${G}0)${CYAN} Salir${RESET}"
         fi
-    fi
 
-    rm -f ${ADM_slow}/server.key ${ADM_slow}/server.pub
-    ${ADM_inst}/dns-server -gen-key \
-    -privkey-file ${ADM_slow}/server.key \
-    -pubkey-file ${ADM_slow}/server.pub &>/dev/null
+        echo
+        read -p "Seleccione una opción: " opcion
 
-    msg -bar
-    msg -nama "Iniciando SlowDNS..."
-
-    iptables -I INPUT -p udp --dport 5300 -j ACCEPT
-    iptables -t nat -I PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300
-
-    if screen -dmS slowdns ${ADM_inst}/dns-server -udp :5300 \
-    -privkey-file ${ADM_slow}/server.key \
-    $NS 127.0.0.1:$PORT ; then
-        msg -verd " OK"
-    else
-        msg -verm2 " FAIL"
-    fi
-
-    enter
+        case $opcion in
+            1) instalar_slowdns ;;
+            0) exit ;;
+            *) 
+                echo -e "${Y}⚠ Opción inválida${RESET}"
+                sleep 1
+                ;;
+        esac
+    done
 }
 
-reset_slow(){
-    clear
-    msg -bar
-    msg -nama "Reiniciando SlowDNS..."
-
-    screen -ls | grep slowdns | cut -d. -f1 | awk '{print $1}' | xargs kill 2>/dev/null
-
-    NS=$(cat ${ADM_slow}/domain_ns)
-    PORT=$(cat ${ADM_slow}/puerto)
-
-    if screen -dmS slowdns ${ADM_inst}/dns-server -udp :5300 \
-    -privkey-file ${ADM_slow}/server.key \
-    $NS 127.0.0.1:$PORT ; then
-        msg -verd " OK"
-    else
-        msg -verm2 " FAIL"
-    fi
-
-    enter
-}
-
-stop_slow(){
-    clear
-    msg -bar
-    msg -nama "Deteniendo SlowDNS..."
-
-    if screen -ls | grep slowdns | cut -d. -f1 | awk '{print $1}' | xargs kill 2>/dev/null ; then
-        msg -verd " OK"
-    else
-        msg -verm2 " FAIL"
-    fi
-
-    enter
-}
-
-# =================== MENU ===================
-
-while :
-do
-    clear
-    msg -bar
-    print_center -ama "INSTALADOR SLOWDNS"
-    msg -bar
-
-    menu_func "Ver Informacion" "Iniciar SlowDNS" "Reiniciar SlowDNS" "Parar SlowDNS"
-    opcion=$(selection_fun)
-
-    case $opcion in
-        1) info ;;
-        2) ini_slow ;;
-        3) reset_slow ;;
-        4) stop_slow ;;
-        0) break ;;
-    esac
-done
-
-exit 0
+# ==================================================
+# 📌 EJECUCIÓN
+# ==================================================
+menu
