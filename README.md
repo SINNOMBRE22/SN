@@ -63,13 +63,7 @@ rm -f install.sh* \
 
 Actualiza a la última versión con:
 
-```sh
-rm -f install.sh* \
-&& wget -q https://raw.githubusercontent.com/SINNOMBRE22/SN/main/install.sh \
-&& chmod +x install.sh \
-&& bash install.sh --update
-```
-
+```bash
 ---
 
 ## 🔑 Requisitos
