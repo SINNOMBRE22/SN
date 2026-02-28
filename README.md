@@ -63,8 +63,6 @@ rm -f install.sh* \
 
 Actualiza a la última versión con:
 
-```sh
----
 
 ## 🔑 Requisitos
 
