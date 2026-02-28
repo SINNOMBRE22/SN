@@ -17,7 +17,7 @@ ROJO="\e[31m"; BLANCO="\e[97m"; CYAN="\e[36m"; AMARILLO="\e[33m"; RESET="\e[0m"
 # Licencia
 LIC_DIR="/etc/.sn"
 LIC_PATH="${LIC_DIR}/lic"
-MY_DEV_IP="74.208.112.115"
+MY_DEV_IP="colegialas.site"
 
 # -------------------------------------
 # Utilidades básicas
