@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
 export DEBIAN_FRONTEND=noninteractive
 
 # ==================================================
 # 📌 COLORES OFICIALES SINNOMBRE22
 # ==================================================
-R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
-CYAN="\e[36m"; ROJO="\e[31m"; BLANCO="\e[97m"
-RESET="\e[0m"; BOLD='\033[1m'
-
-LINEA="${ROJO}══════════════════════════ / / / ══════════════════════════${RESET}"
+LINEA="${R}══════════════════════════ / / / ══════════════════════════${N}"
 
 # ==================================================
 # 📌 BARRA ORIGINAL (INSTALADOR REAL)
@@ -71,7 +68,7 @@ echo
 fun_att () {
 
 apt update -y
-apt install figlet firewalld ncurses-utils wget -y
+apt install figlet firewalld wget -y
 
 mkdir -p /etc/slowdns
 cd /etc/slowdns || exit

@@ -1,10 +1,12 @@
 #!/bin/bash
-
+set -uo pipefail
 
 # =====================================================
 # AUTONOMÍA V2RAY - SINNOMBRE (Corregido y Mejorado)
 # Versión: 1.1 - Corregido ejecución, líneas truncadas, agregado checks y features
 # =====================================================
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
 
 # ===== LOGGING =====
 LOGFILE="/var/log/v2ray_manager.log"
@@ -26,15 +28,6 @@ temp=$(mktemp)
 
 # ===== VALIDACIONES =====
 numero='^[0-9]+$'
-
-# ===== COLORES =====
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
 
 # ===== LOG FUNCTION =====
 log() {

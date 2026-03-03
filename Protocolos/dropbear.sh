@@ -6,35 +6,11 @@
 # Archivo: SN/Protocolos/dropbear.sh
 # =========================================================
 
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-M='\033[0;35m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT_DIR}/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
+
 DROPBEAR_CONF="/etc/default/dropbear"
 DROPBEAR_BIN="/usr/sbin/dropbear"
-
-# Función pause mejorada
-pause() { 
-    echo ""
-    echo -ne "${W}Presiona Enter para continuar...${N}"
-    read -r -t 30 || true
-    echo ""
-}
-
-require_root() {
-    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-        echo -e "${R}✗ Ejecuta como root.${N}"
-        exit 1
-    fi
-}
-
-hr() { echo -e "${R}═════════════════════════════════════════════════════════════${N}"; }
 
 show_header() {
     clear

@@ -5,50 +5,13 @@
 # Creador: @SIN_NOMBRE22
 # =========================================================
 
-# Colores
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${ROOT_DIR}/../lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
 
 # ===== RUTAS Y VARIABLES ORIGINALES =====
 VPS_src="/etc/SN"
 VPS_crt="/etc/SN/cert"
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 L_ROJA="${R}══════════════════════════ / / / ══════════════════════════${N}"
-
-# ===== FUNCIONES DE INTERFAZ =====
-clear_screen() { clear; }
-
-pause() {
-  echo -e "\n${W}───────────────────────────────────────────────────────────${N}"
-  read -r -p "    Presiona [Enter] para continuar..."
-}
-
-header() {
-  clear_screen
-  echo -e "$L_ROJA"
-  echo -e "${W}      $1${N}"
-  echo -e "$L_ROJA"
-}
-
-# ===== LÓGICA ORIGINAL DE MÓDULOS =====
-run_module() {
-  local rel="$1"
-  local path="${ROOT_DIR}/${rel}"
-  if [[ -f "$path" ]]; then
-    bash "$path"
-    clear_screen
-  else
-    echo ""
-    echo -e "${Y}Módulo no disponible:${N} ${C}${rel}${N}"
-    echo -e "${Y}Estado:${N} En desarrollo..."
-    pause
-  fi
-}
 
 # ===== FUNCIONES INTEGRADAS (ORIGINALES) =====
 

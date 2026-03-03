@@ -1,7 +1,7 @@
 #!/bin/bash
 # =========================================================
 # SinNombre - Colores y utilidades compartidas
-# Incluir con: source /etc/SN/lib/colors.sh
+# Incluir con: source /etc/SN/lib/colores.sh
 # =========================================================
 
 # Colores ANSI
@@ -50,6 +50,9 @@ header() {
   hr
 }
 
+# Línea horizontal (alias de hr)
+line() { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
+
 # Ejecutar módulo con validación
 run_module() {
   local base_dir="${2:-$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)}"
@@ -66,5 +69,68 @@ run_module() {
     echo -e "${Y}Ruta esperada:${N} $path"
     echo -e "${Y}Estado:${N} En desarrollo..."
     pause
+  fi
+}
+
+# Ejecutar protocolo con validación (usado en Protocolos/menu.sh)
+run_proto() {
+  local root_dir="${2:-$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)}"
+  local rel="${1-}"
+  local path="${root_dir}/${rel}"
+  if [[ -n "${rel}" && -f "$path" ]]; then
+    bash "$path"
+  else
+    echo ""
+    echo -e "${Y}${BOLD}Módulo no disponible:${N} ${C}${rel:-"(sin ruta)"}${N}"
+    echo -e "Estado: ${Y}En desarrollo...${N}"
+    pause
+  fi
+}
+
+# Volver al menú principal
+back_to_main() {
+  local root_dir="${1:-$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)}"
+  [[ -f "${root_dir}/menu" ]] && bash "${root_dir}/menu" || exit 0
+}
+
+# Mensajes con estilo (compatibles con Sistema/v2ray.sh y otros)
+msg() {
+  case "$1" in
+    -bar)   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}" ;;
+    -bar3)  echo -e "${R}──────────────────────────────────────────${N}" ;;
+    -verd)  echo -e "${G}$2${N}" ;;
+    -verm|-verm2) echo -e "${R}$2${N}" ;;
+    -ama)   echo -e "${Y}$2${N}" ;;
+    -azu)   echo -e "${C}$2${N}" ;;
+    -ne)    echo -ne "$2" ;;
+    -nazu)  echo -ne "${C}$2${N}" ;;
+    -blu)   echo -e "${B}$2${N}" ;;
+    *)      echo -e "$*" ;;
+  esac
+}
+
+# Título de sección
+title() {
+  clear
+  msg -bar
+  echo -e "${W} $* ${N}"
+  msg -bar
+}
+
+# Imprimir centrado (delegado a msg)
+print_center() {
+  msg "$1" "$2"
+}
+
+# Pausa con Enter
+enter() {
+  read -rp " Presione ENTER para continuar"
+}
+
+# Borrar N líneas del terminal
+del() {
+  local n="${1:-1}"
+  if command -v tput >/dev/null 2>&1 && [[ -t 1 ]]; then
+    for ((i=0; i<n; i++)); do tput cuu1 && tput dl1; done
   fi
 }

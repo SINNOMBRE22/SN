@@ -13,22 +13,10 @@ set -euo pipefail
 # - Opción para elegir certificado SSL antes de instalar (usar existente, default, o agregar)
 # =========================================================
 
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
-D='\033[2m'
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT_DIR}/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
 
-pause(){ echo ""; read -r -p "Presiona Enter para continuar..."; }
-hr(){ echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
-sep(){ echo -e "${R}------------------------------------------------------------${N}"; }
-
-require_root(){ [[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo -e "${R}Ejecuta como root.${N}"; exit 1; }; }
+D='\033[2m'
 
 CONF="/etc/stunnel/stunnel.conf"
 PEM="/etc/stunnel/stunnel.pem"

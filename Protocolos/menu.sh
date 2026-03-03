@@ -7,17 +7,10 @@ set -euo pipefail
 # Archivo: SN/Protocolos/menu.sh
 # =========================================================
 
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
-D='\033[2m'
-BOLD='\033[1m'
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT_DIR}/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
+
+D='\033[2m'
 
 pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
 back_to_main() { [[ -f "${ROOT_DIR}/menu" ]] && bash "${ROOT_DIR}/menu" || exit 0; }
@@ -87,8 +80,6 @@ check_badvpn_status() { pgrep -x badvpn-udpgw >/dev/null 2>&1 && echo "true" || 
 # =========================================================
 BOX_W=58
 BOX_LINE="══════════════════════════ / / / ══════════════════════════"
-
-hr() { echo -e "${R}${BOX_LINE}${N}"; }
 
 print_item_list() {
   local n="${1}" name="${2}" st="${3}"

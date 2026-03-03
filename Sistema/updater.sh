@@ -10,15 +10,7 @@ INSTALL_DIR="/etc/SN"
 REPO_URL="https://github.com/SINNOMBRE22/SN.git"
 REPO_BRANCH="main"
 
-R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
-C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
-
-hr() { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
-pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
-
-require_root() {
-  [[ "$(id -u)" -eq 0 ]] || { echo -e "${R}Ejecuta como root.${N}"; exit 1; }
-}
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
 
 update_full() {
   clear

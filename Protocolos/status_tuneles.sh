@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
 # Helpers de estado para el menú "INSTALADORES - TÚNELES"
 # Evita detecciones falsas por puerto (ej: confundir dropbear con python)
 
