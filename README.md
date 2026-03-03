@@ -46,32 +46,6 @@ El panel principal te permite:
 
 ---
 
-## 📦 Instalación
-
-Copia y ejecuta lo siguiente en tu terminal:
-
-```sh
-rm -f install.sh* \
-&& wget -q https://raw.githubusercontent.com/SINNOMBRE22/SN/main/install.sh \
-&& chmod 775 install.sh \
-&& sudo bash install.sh --start
-```
-
----
-
-## ♻️ Actualización
-
-Actualiza a la última versión con:
-
-```sh
-rm -f install.sh* \
-&& wget -q https://raw.githubusercontent.com/SINNOMBRE22/SN/main/install.sh \
-&& chmod +x install.sh \
-&& bash install.sh --update
-```
-
----
-
 ## 🔑 Requisitos
 
 - Linux (preferible Ubuntu 18+, probado en Ubuntu 22.04)
