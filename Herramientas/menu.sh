@@ -5,6 +5,7 @@
 # Creador: @SIN_NOMBRE22
 # =========================================================
 
+# Colores
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -13,17 +14,28 @@ C='\033[0;36m'
 W='\033[1;37m'
 N='\033[0m'
 
-# ===== RUTAS BASE SN =====
+# ===== RUTAS Y VARIABLES ORIGINALES =====
 VPS_src="/etc/SN"
 VPS_crt="/etc/SN/cert"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+L_ROJA="${R}══════════════════════════ / / / ══════════════════════════${N}"
 
+# ===== FUNCIONES DE INTERFAZ =====
 clear_screen() { clear; }
 
 pause() {
-  echo ""
-  read -r -p "Presiona Enter para continuar..."
+  echo -e "\n${W}───────────────────────────────────────────────────────────${N}"
+  read -r -p "    Presiona [Enter] para continuar..."
 }
 
+header() {
+  clear_screen
+  echo -e "$L_ROJA"
+  echo -e "${W}      $1${N}"
+  echo -e "$L_ROJA"
+}
+
+# ===== LÓGICA ORIGINAL DE MÓDULOS =====
 run_module() {
   local rel="$1"
   local path="${ROOT_DIR}/${rel}"
@@ -38,13 +50,10 @@ run_module() {
   fi
 }
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ===== FUNCIONES INTEGRADAS (ORIGINALES) =====
 
 run_speedtest() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}                     SPEEDTEST${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  header "           SPEEDTEST"
   if command -v speedtest-cli &>/dev/null; then
     speedtest-cli --simple
   else
@@ -56,10 +65,7 @@ run_speedtest() {
 }
 
 ping_test() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}                     PING TEST${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  header "           PING TEST"
   echo -ne "${W}Ingresa la IP o dominio a pinguear: ${G}"
   read -r target
   if [[ -n "${target:-}" ]]; then
@@ -71,48 +77,29 @@ ping_test() {
 }
 
 update_system() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}                  ACTUALIZAR SISTEMA${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}Actualizando lista de paquetes...${N}"
-  apt update
+  header "       ACTUALIZAR SISTEMA"
   echo -e "${Y}Actualizando paquetes...${N}"
-  apt upgrade -y
+  apt update && apt upgrade -y
   echo -e "${G}Sistema actualizado.${N}"
   pause
 }
 
 clean_cache() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}                   LIMPIAR CACHE${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}Limpiando cache de apt...${N}"
-  apt clean
-  apt autoclean
-  echo -e "${Y}Limpiando cache de thumbnails...${N}"
+  header "         LIMPIAR CACHE"
+  apt clean && apt autoclean
   rm -rf ~/.cache/thumbnails/*
   echo -e "${G}Cache limpiado.${N}"
   pause
 }
 
 change_root_pass() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}              CAMBIAR CONTRASEÑA ROOT${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}Cambiando contraseña de root...${N}"
+  header "    CAMBIAR CONTRASEÑA ROOT"
   passwd root
-  echo -e "${G}Contraseña cambiada.${N}"
   pause
 }
 
 configure_domain() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}               CONFIGURAR DOMINIO VPS${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  header "     CONFIGURAR DOMINIO VPS"
   mkdir -p "$VPS_src"
   echo -ne "${W}Ingresa el dominio de la VPS: ${G}"
   read -r domain
@@ -126,21 +113,13 @@ configure_domain() {
 }
 
 view_system_logs() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}                  VER LOGS DEL SISTEMA${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}Mostrando logs recientes (últimas 50 líneas)...${N}"
+  header "      VER LOGS DEL SISTEMA"
   journalctl -n 50 --no-pager
   pause
 }
 
 restart_services() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}               REINICIAR SERVICIOS${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}Reiniciando servicios comunes...${N}"
+  header "       REINICIAR SERVICIOS"
   systemctl restart sshd 2>/dev/null || true
   systemctl restart cron 2>/dev/null || true
   systemctl restart rsyslog 2>/dev/null || true
@@ -149,96 +128,65 @@ restart_services() {
 }
 
 auto_start_script() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${W}            CONFIGURAR AUTO INICIO DEL SCRIPT${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}Agregando script al crontab para auto inicio...${N}"
+  header "     AUTO INICIO DEL SCRIPT"
   script_path="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/menu"
   (crontab -l 2>/dev/null; echo "@reboot $script_path") | crontab -
   echo -e "${G}Auto inicio configurado.${N}"
   pause
 }
 
-invalid_option() {
-  clear_screen
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${B}                   OPCIÓN INVÁLIDA${N}"
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  sleep 2
-}
+# ===== MENÚ PRINCIPAL (NUEVO DISEÑO) =====
 
 main_menu() {
   while true; do
     clear_screen
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-    echo -e "${W}                 MENÚ DE HERRAMIENTAS${N}"
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-    echo -e "${R}[${Y}1${R}]${N}  ${C}Speedtest${N}"
+    echo -e "$L_ROJA"
+    echo -e "${W}             S I N  N O M B R E  -  M E N U${N}"
+    echo -e "$L_ROJA"
+    
+    # Doble columna con tus opciones originales
+    echo -e " ${R}[${Y}01${R}]${N} ${C}Speedtest             ${R}[${Y}08${R}]${N} ${C}Logs del Sistema${N}"
+    echo -e " ${R}[${Y}02${R}]${N} ${C}Ping Test             ${R}[${Y}09${R}]${N} ${C}Reiniciar Servicios${N}"
+    echo -e " ${R}[${Y}03${R}]${N} ${C}Actualizar Sistema    ${R}[${Y}10${R}]${N} ${C}Auto Inicio Script${N}"
+    echo -e " ${R}[${Y}04${R}]${N} ${C}Limpiar Cache         ${R}[${Y}11${R}]${N} ${C}Gestión Cert SSL${N}"
+    echo -e " ${R}[${Y}05${R}]${N} ${C}Cambiar Pass Root     ${R}[${Y}12${R}]${N} ${C}Gestión Swap${N}"
+    echo -e " ${R}[${Y}06${R}]${N} ${C}Configurar Dominio    ${R}[${Y}13${R}]${N} ${C}Modo Gamer / Accel${N}"
+    echo -e " ${R}[${Y}07${R}]${N} ${C}Zona Horaria          ${R}[${Y}14${R}]${N} ${Y}PAYLOAD GENERATOR${N}"
     echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}2${R}]${N}  ${C}Ping Test${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}3${R}]${N}  ${C}Actualizar Sistema${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}4${R}]${N}  ${C}Limpiar Cache${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}5${R}]${N}  ${C}Cambiar Pass Root${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}6${R}]${N}  ${C}Configurar Dominio${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}7${R}]${N}  ${C}Configurar Zona Horaria${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}8${R}]${N}  ${C}Ver Logs del Sistema${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}9${R}]${N}  ${C}Reiniciar Servicios${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}10${R}]${N} ${C}Auto Inicio del Script${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}11${R}]${N} ${C}Gestión de Certificados SSL${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}12${R}]${N} ${C}Gestión de Memoria Swap${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}13${R}]${N} ${C}Modo Gamer / Acelerador${N}"
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "${R}[${Y}0${R}]${N}  ${C}VOLVER${N}"
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    echo -e "             ${R}[${Y}00${R}]${N} ${W}SALIR DEL SCRIPT${N}"
+    echo -e "$L_ROJA"
     echo ""
-    echo -ne "${W}Selecciona una opción: ${G}"
+    echo -ne "${W} Selecciona una opción: ${G}"
     read -r option
 
     case "${option:-}" in
-      1) run_speedtest ;;
-      2) ping_test ;;
-      3) update_system ;;
-      4) clean_cache ;;
-      5) change_root_pass ;;
-      6) configure_domain ;;
-      7) run_module "zonahora.sh" ;;
-      8) view_system_logs ;;
-      9) restart_services ;;
+      1|01) run_speedtest ;;
+      2|02) ping_test ;;
+      3|03) update_system ;;
+      4|04) clean_cache ;;
+      5|05) change_root_pass ;;
+      6|06) configure_domain ;;
+      7|07) run_module "zonahora.sh" ;;
+      8|08) view_system_logs ;;
+      9|09) restart_services ;;
       10) auto_start_script ;;
       11) run_module "ssl.sh" ;;
       12) run_module "swap.sh" ;;
       13) run_module "gamer.sh" ;;
-      0) return 0 ;;
-      *)
-        invalid_option
-        ;;
+      14) run_module "paygen.sh" ;;
+      0|00) exit 0 ;;
+      *) echo -e "${R} Opción inválida${N}"; sleep 1 ;;
     esac
   done
 }
 
-require_root() {
-  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+# Verificación Root
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     clear_screen
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    echo -e "$L_ROJA"
     echo -e "${Y}Este menú requiere root.${N}"
-    echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+    echo -e "$L_ROJA"
     exit 1
-  fi
-}
+fi
 
-trap return SIGINT SIGTERM
-
-require_root
 main_menu
