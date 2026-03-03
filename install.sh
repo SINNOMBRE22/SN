@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 # =========================================================
 # SinNombre - Installer 
@@ -70,7 +70,7 @@ install_deps() {
   apt-get install -y screen cron lsof nano at mlocate && ok
 
   step "Procesamiento"
-  apt-get install -y jq bc gawk grep && ok
+  apt-get install -y jq bc gawk && ok
 
   step "Node.js"
   apt-get install -y nodejs npm && ok
@@ -180,7 +180,7 @@ EOF
 install_banner() {
   step "Instalando banner mejorado"
 
-  cat >> /root/.bashrc << 'EOF'
+  grep -q "SinNombre - Welcome banner" /root/.bashrc 2>/dev/null || cat >> /root/.bashrc << 'EOF'
 
 # ============================
 # SinNombre - Welcome banner mejorado

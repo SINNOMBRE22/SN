@@ -6,17 +6,7 @@ set -uo pipefail
 # Menú profesional con banner UDP Custom
 # =========================================================
 
-# -------------------------------
-# Colores ANSI
-# -------------------------------
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-M='\033[0;35m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
 
 # -------------------------------
 # Rutas y configuración

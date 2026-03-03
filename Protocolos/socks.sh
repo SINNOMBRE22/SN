@@ -21,24 +21,10 @@ set -euo pipefail
 # - Crea launcher por puerto: /usr/local/bin/pydirect-<puerto>.sh (evita escapes raros en systemd)
 # =========================================================
 
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
-D='\033[2m'
-BOLD='\033[1m'
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/python" && pwd)"
+source "${ROOT_DIR}/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
+PY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/python" 2>/dev/null && pwd)" || PY_DIR="$(dirname "${BASH_SOURCE[0]}")/python"
 PDIRECT="${PY_DIR}/PDirect.py"
-
-pause(){ echo ""; read -r -p "Presiona Enter para continuar..."; }
-hr(){ echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
-sep(){ echo -e "${R}------------------------------------------------------------${N}"; }
-require_root(){ [[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo -e "${R}Ejecuta como root.${N}"; exit 1; }; }
 
 python2_bin() {
   command -v python2 >/dev/null 2>&1 && { echo "python2"; return; }

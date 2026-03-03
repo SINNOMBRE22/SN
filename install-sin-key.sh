@@ -14,9 +14,7 @@ LIC_DIR="/etc/.sn"
 LIC_PATH="$LIC_DIR/lic"
 INSTALL_DIR="/etc/SN"
 
-# ============================
-# COLORES
-# ============================
+# Colores mínimos (antes de que el repo esté clonado)
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
 C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
 BOLD='\033[1m'
@@ -68,7 +66,7 @@ install_deps() {
   apt-get install -y screen cron lsof nano at mlocate && ok
 
   step "Procesamiento"
-  apt-get install -y jq bc gawk grep && ok
+  apt-get install -y jq bc gawk && ok
 
   step "Node.js"
   apt-get install -y nodejs npm && ok

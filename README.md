@@ -1,6 +1,6 @@
 <h1 align="center">
-  <img src="https://img.shields.io/badge/Shell-88.7%25-green?logo=gnu-bash&logoColor=white" />
-  <img src="https://img.shields.io/badge/Python-11.3%25-blue?logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/Shell-97.9%25-green?logo=gnu-bash&logoColor=white" />
+  <img src="https://img.shields.io/badge/Python-2.1%25-blue?logo=python&logoColor=white" />
   <img src="https://img.shields.io/github/license/SINNOMBRE22/SN?color=blueviolet" />
   <br>
   <img width="300" src="https://github.com/SINNOMBRE22/SN/raw/main/IMG-20251219-WA0021.jpg" alt="SinNombre VPS Manager">
@@ -35,11 +35,13 @@ El panel principal te permite:
 ## 🏗️ Estructura
 
 ```
-├── install.sh           # Script principal de instalación y actualización
-├── menu                # Script Bash, interfaz principal
-├── pythonproxy.py      # Herramienta en Python
-├── Herramientas/       
-├── Protocolos/       
+├── install.sh           # Script principal de instalación (con key)
+├── install-sin-key.sh   # Instalador sin validación de key
+├── menu                 # Script Bash, interfaz principal
+├── lib/
+│   └── colores.sh       # Colores y funciones compartidas
+├── Herramientas/
+├── Protocolos/
 ├── Sistema/
 ├── Usuarios/
 ```
@@ -67,7 +69,7 @@ El panel principal te permite:
 
 ## 🛡️ Licencia
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENCIA)
 
 ---
 

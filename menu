@@ -2,17 +2,12 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${ROOT_DIR}/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
 
 # =========================================================
 # SinNombre v2.0 - Panel CLI (Ubuntu 22.04+)
 # Creador: @SIN_NOMBRE22
 # =========================================================
-
-# Colores
-R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
-M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
-BOLD='\033[1m'
-ROJO="\e[31m"; BLANCO="\e[97m"; CYAN="\e[36m"; AMARILLO="\e[33m"; RESET="\e[0m"
 
 # Licencia
 LIC_DIR="/etc/.sn"
@@ -52,9 +47,10 @@ license_box() {
 }
 
 check_license() {
-  local my_ip
+  local my_ip dev_ip
   my_ip="$(get_public_ip)"
-  if [[ -n "$my_ip" && "$my_ip" == "$MY_DEV_IP" ]]; then
+  dev_ip="$(getent hosts "$MY_DEV_IP" 2>/dev/null | awk '{print $1}' | head -1 || true)"
+  if [[ -n "$my_ip" && -n "$dev_ip" && "$my_ip" == "$dev_ip" ]]; then
     return 0
   fi
   [[ -f "$LIC_PATH" ]] || license_box

@@ -1,4 +1,5 @@
-#!bin/bash
+#!/bin/bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" 2>/dev/null || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
 
 BEIJING_UPDATE_TIME=3
 BEGIN_PATH=$(pwd)
@@ -12,23 +13,23 @@ CLEAN_IPTABLES_SHELL="$BASE_SOURCE_PATH/v2ray_util/global_setting/clean_iptables
 [[ -z $(echo $SHELL|grep zsh) ]] && ENV_FILE=".bashrc" || ENV_FILE=".zshrc"
 
 dependencias(){
-        soft="socat cron bash-completion ntpdate gawk jq uuid-runtime python-pip python3 python3-pip"
+        soft="socat cron bash-completion ntpdate gawk jq uuid-runtime python3 python3-pip"
 
-        for install in $soft; do
-                leng="${#install}"
+        for pkg in $soft; do
+                leng="${#pkg}"
                 puntos=$(( 21 - $leng))
                 pts="."
                 for (( a = 0; a < $puntos; a++ )); do
                         pts+="."
                 done
-                msg -nazu "      instalando $install $(msg -ama "$pts")"
-                if apt install $install -y &>/dev/null ; then
+                msg -nazu "      instalando $pkg $(msg -ama "$pts")"
+                if apt install $pkg -y &>/dev/null ; then
                         msg -verd "INSTALL"
                 else
                         msg -verm2 "FAIL"
                         sleep 2
                         del 1
-                        if [[ $install = "python" ]]; then
+                        if [[ $pkg = "python" ]]; then
                                 pts=$(echo ${pts:1})
                                 msg -nazu "      instalando python2 $(msg -ama "$pts")"
                                 if apt install python2 -y &>/dev/null ; then
@@ -39,12 +40,12 @@ dependencias(){
                                 fi
                                 continue
                         fi
-                        print_center -ama "aplicando fix a $install"
+                        print_center -ama "aplicando fix a $pkg"
                         dpkg --configure -a &>/dev/null
                         sleep 2
                         del 1
-                        msg -nazu "      instalando $install $(msg -ama "$pts")"
-                        if apt install $install -y &>/dev/null ; then
+                        msg -nazu "      instalando $pkg $(msg -ama "$pts")"
+                        if apt install $pkg -y &>/dev/null ; then
                                 msg -verd "INSTALL"
                         else
                                 msg -verm2 "FAIL"
@@ -128,7 +129,8 @@ installFinish(){
     jq 'del(.inbounds[].streamSettings.kcpSettings[])' < /etc/v2ray/config.json >> /etc/v2ray/tmp.json
     rm -rf /etc/v2ray/config.json
     jq '.inbounds[].streamSettings += {"network":"ws","wsSettings":{"path": "/SinNombre/","headers": {"Host": "ejemplo.com"}}}' < /etc/v2ray/tmp.json >> /etc/v2ray/config.json
-    chmod 777 /etc/v2ray/config.json
+    chmod 600 /etc/v2ray/config.json
+    rm -f /etc/v2ray/tmp.json
     msg -bar
     if [[ $(v2ray restart|grep success) ]]; then
             v2ray info
