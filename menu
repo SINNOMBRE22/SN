@@ -431,16 +431,35 @@ update_script() {
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${W}                ACTUALIZAR SCRIPT${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}Descargando la última versión desde GitHub...${N}"
-  if wget -O /tmp/menu_new https://raw.githubusercontent.com/SINNOMBRE22/SN/main/menu 2>/dev/null; then
-    chmod +x /tmp/menu_new
-    cp /tmp/menu_new "$ROOT_DIR/menu"
-    chmod +x "$ROOT_DIR/menu"
-    echo -e "${G}Script actualizado exitosamente!${N}"
-    echo -e "${Y}Reinicia el menú para aplicar cambios.${N}"
+
+  local updater="$ROOT_DIR/Sistema/updater.sh"
+
+  if [[ -f "$updater" ]]; then
+    chmod +x "$updater"
+    bash "$updater"
   else
-    echo -e "${R}Error al descargar la actualización.${N}"
+    # Fallback: si no existe el updater, intentar descargarlo primero
+    echo -e "${Y}Descargando actualizador...${N}"
+    if wget -q -O /tmp/sn_updater.sh "https://raw.githubusercontent.com/SINNOMBRE22/SN/main/Sistema/updater.sh" 2>/dev/null; then
+      chmod +x /tmp/sn_updater.sh
+      bash /tmp/sn_updater.sh
+      rm -f /tmp/sn_updater.sh
+    else
+      # Fallback final: método viejo (solo menu)
+      echo -e "${Y}No se pudo obtener el actualizador completo.${N}"
+      echo -e "${Y}Usando método básico (solo archivo menu)...${N}"
+      if wget -O /tmp/menu_new "https://raw.githubusercontent.com/SINNOMBRE22/SN/main/menu" 2>/dev/null; then
+        chmod +x /tmp/menu_new
+        cp /tmp/menu_new "$ROOT_DIR/menu"
+        chmod +x "$ROOT_DIR/menu"
+        echo -e "${G}Script actualizado (solo menú).${N}"
+        echo -e "${Y}Para actualización completa, reinstala el panel.${N}"
+      else
+        echo -e "${R}Error al descargar la actualización.${N}"
+      fi
+    fi
   fi
+
   pause
 }
 
@@ -464,8 +483,8 @@ invalid_option() {
 exit_script() {
   clear_screen
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "${Y}              Saliendo de SinNombre...${N}"
-  echo -e "${G}           ¡Gracias por usar SinNombre!${N}"
+  echo -e "${Y}              Saliendo de SN-Manager...${N}"
+  echo -e "${G}           ¡Gracias por usar SN-Manager!${N}"
   echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   exit
 }
