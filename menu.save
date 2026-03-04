@@ -18,7 +18,7 @@ else
   M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
   BOLD='\033[1m'
   hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
-#  sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
+  sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
   step() { printf " ${C}•${N} ${W}%s${N} " "$1"; }
   ok()   { echo -e "${G}[OK]${N}"; }
   fail() { echo -e "${R}[FAIL]${N}"; }
@@ -247,7 +247,7 @@ show_services_status() {
     echo ""
   done
 
-  sep
+  hr
 }
 
 # ── Info del sistema ────────────────────────────────────
@@ -291,26 +291,26 @@ show_banner() {
   show_custom_banner
 
   hr
-  echo -e "${R} ⟪ ${G}● Creado Por SinNombre - SN-Manager v2.0 ●${R} ⟫${N}"
-  sep
-  echo -e "${R} » ${N} ${W}Sistema: ${G}${DISTRO}${N}"
-  echo -e "${R} » ${N} ${W}IP Publica: ${Y}${IP_PUBLICA}${N}"
+  echo -e "${R}[ ${G}●            SinNombre - VPS Manager v2.0 ●${R} ]${N}"
+  hr
+  echo -e "${R}${N} ${W}Sistema: ${G}${DISTRO}${N}"
+  echo -e "${R}[${N} ${W}IP Publica: ${Y}${IP_PUBLICA}${N}"
   [[ -n "$DOMINIO" ]] && \
-  echo -e "${R} » ${N} ${W}Dominio: ${Y}${DOMINIO}${N}"
-  echo -e "${R} » ${N} ${W}Usuario: ${G}${USUARIO}${N}"
-  echo -e "${R} » ${N} ${W}Zona Horaria: ${Y}${ZONA_HORARIA}${N}"
-  sep
-  echo -e "${R} ⇒ ${N} ${W}Memoria Ram:  ${Y}${MEM_TOTAL} MB${W} > Uso: ${Y}${MEM_USADA} MB${W} > Libre: ${G}${MEM_LIBRE} MB${R} ]${N}"
+  echo -e "${R}[${N} ${W}Dominio: ${Y}${DOMINIO}${N}"
+  echo -e "${R}[${N} ${W}Usuario: ${G}${USUARIO}${N}"
+  echo -e "${R}[${N} ${W}Zona Horaria: ${Y}${ZONA_HORARIA}${N}"
+  hr
+  echo -e "${R}[${N} ${W}Memoria Ram:  ${Y}${MEM_TOTAL} MB${W} > Uso: ${Y}${MEM_USADA} MB${W} > Libre: ${G}${MEM_LIBRE} MB${R} ]${N}"
   [[ -n "$SWAP_INFO" ]] && \
-  echo -e "${R} ⇒ ${N} ${W}Memoria Swap: ${SWAP_INFO}${R} ]${N}"
+  echo -e "${R}[${N} ${W}Memoria Swap: ${SWAP_INFO}${R} ]${N}"
 }
 
 show_system_status() {
   echo -e "${W}                    ESTADO DEL SISTEMA${N}"
   hr
-  echo -e "${R} ◉ ${N} ${W}Uptime: ${Y}$(uptime -p | sed 's/up //')${N}"
-  echo -e "${R} ◉ ${N} ${W}Espacio disco: ${Y}$(df -h / | awk 'NR==2{print $4}') libre${N}"
-  sep
+  echo -e "${R}[${N} ${W}Uptime: ${Y}$(uptime -p | sed 's/up //')${N}"
+  echo -e "${R}[${N} ${W}Espacio disco: ${Y}$(df -h / | awk 'NR==2{print $4}') libre${N}"
+  hr
 }
 
 # ── Menús ───────────────────────────────────────────────
