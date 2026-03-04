@@ -5,52 +5,17 @@
 # Creador: @SIN_NOMBRE22
 # =========================================================
 
-# Colores
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
+# Cargar colores y funciones compartidas
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" 2>/dev/null \
+  || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
 
-# ===== RUTAS Y VARIABLES ORIGINALES =====
+# ===== RUTAS Y VARIABLES =====
 VPS_src="/etc/SN"
 VPS_crt="/etc/SN/cert"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 L_ROJA="${R}══════════════════════════ / / / ══════════════════════════${N}"
 
-# ===== FUNCIONES DE INTERFAZ =====
-clear_screen() { clear; }
-
-pause() {
-  echo -e "\n${W}───────────────────────────────────────────────────────────${N}"
-  read -r -p "    Presiona [Enter] para continuar..."
-}
-
-header() {
-  clear_screen
-  echo -e "$L_ROJA"
-  echo -e "${W}      $1${N}"
-  echo -e "$L_ROJA"
-}
-
-# ===== LÓGICA ORIGINAL DE MÓDULOS =====
-run_module() {
-  local rel="$1"
-  local path="${ROOT_DIR}/${rel}"
-  if [[ -f "$path" ]]; then
-    bash "$path"
-    clear_screen
-  else
-    echo ""
-    echo -e "${Y}Módulo no disponible:${N} ${C}${rel}${N}"
-    echo -e "${Y}Estado:${N} En desarrollo..."
-    pause
-  fi
-}
-
-# ===== FUNCIONES INTEGRADAS (ORIGINALES) =====
+# ===== FUNCIONES INTEGRADAS =====
 
 run_speedtest() {
   header "           SPEEDTEST"
@@ -135,16 +100,15 @@ auto_start_script() {
   pause
 }
 
-# ===== MENÚ PRINCIPAL (NUEVO DISEÑO) =====
+# ===== MENÚ PRINCIPAL =====
 
 main_menu() {
   while true; do
     clear_screen
     echo -e "$L_ROJA"
-    echo -e "${W}             S I N  N O M B R E  -  M E N U${N}"
+    echo -e "${W}                        HERRAMIENTAS${N}"
     echo -e "$L_ROJA"
-    
-    # Doble columna con tus opciones originales
+
     echo -e " ${R}[${Y}01${R}]${N} ${C}Speedtest             ${R}[${Y}08${R}]${N} ${C}Logs del Sistema${N}"
     echo -e " ${R}[${Y}02${R}]${N} ${C}Ping Test             ${R}[${Y}09${R}]${N} ${C}Reiniciar Servicios${N}"
     echo -e " ${R}[${Y}03${R}]${N} ${C}Actualizar Sistema    ${R}[${Y}10${R}]${N} ${C}Auto Inicio Script${N}"
@@ -153,7 +117,7 @@ main_menu() {
     echo -e " ${R}[${Y}06${R}]${N} ${C}Configurar Dominio    ${R}[${Y}13${R}]${N} ${C}Modo Gamer / Accel${N}"
     echo -e " ${R}[${Y}07${R}]${N} ${C}Zona Horaria          ${R}[${Y}14${R}]${N} ${Y}PAYLOAD GENERATOR${N}"
     echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    echo -e "             ${R}[${Y}00${R}]${N} ${W}SALIR DEL SCRIPT${N}"
+    echo -e " ${R}[${Y}00${R}]${N} ${W}SALIR DEL SCRIPT${N}"
     echo -e "$L_ROJA"
     echo ""
     echo -ne "${W} Selecciona una opción: ${G}"
@@ -166,14 +130,14 @@ main_menu() {
       4|04) clean_cache ;;
       5|05) change_root_pass ;;
       6|06) configure_domain ;;
-      7|07) run_module "zonahora.sh" ;;
+      7|07) run_module "zonahora.sh" "$ROOT_DIR" ;;
       8|08) view_system_logs ;;
       9|09) restart_services ;;
       10) auto_start_script ;;
-      11) run_module "ssl.sh" ;;
-      12) run_module "swap.sh" ;;
-      13) run_module "gamer.sh" ;;
-      14) run_module "paygen.sh" ;;
+      11) run_module "ssl.sh" "$ROOT_DIR" ;;
+      12) run_module "swap.sh" "$ROOT_DIR" ;;
+      13) run_module "gamer.sh" "$ROOT_DIR" ;;
+      14) run_module "paygen.sh" "$ROOT_DIR" ;;
       0|00) exit 0 ;;
       *) echo -e "${R} Opción inválida${N}"; sleep 1 ;;
     esac
@@ -181,12 +145,6 @@ main_menu() {
 }
 
 # Verificación Root
-if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-    clear_screen
-    echo -e "$L_ROJA"
-    echo -e "${Y}Este menú requiere root.${N}"
-    echo -e "$L_ROJA"
-    exit 1
-fi
+require_root
 
 main_menu
