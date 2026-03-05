@@ -12,10 +12,10 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" 2>/dev/
 }
 
 # ── Rutas SN ────────────────────────────────────────────
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VPS_user="/etc/SN"
-VPS_inst="/etc/SN/install"
 USRdatabase="/etc/SN/usuarios"
-mkdir -p "$VPS_user" "$VPS_inst" "$USRdatabase"
+mkdir -p "$VPS_user" "$USRdatabase"
 USRdatabase="${VPS_user}/VPSuser"
 [[ ! -d "${VPS_user}/B-VPSuser" ]] && mkdir -p "${VPS_user}/B-VPSuser"
 
@@ -72,7 +72,6 @@ droppids() {
 # =========================================================
 get_vps_system_info() {
   if [[ -f /etc/os-release ]]; then
-    # shellcheck disable=SC1091
     . /etc/os-release
     VPS_DISTRO="${PRETTY_NAME:-$(uname -rs)}"
   else
@@ -89,7 +88,6 @@ get_active_ports() {
   local ss_output
   ss_output="$(ss -Hlntup 2>/dev/null)" || ss_output=""
 
-  # Arrays para clasificar puertos
   PORTS_MAIN=""
   PORTS_EXTRA=""
   PORTS_SLOWDNS=""
@@ -98,6 +96,47 @@ get_active_ports() {
 
   declare -A svc_ports=()
 
+  # ── Leer TODOS los bloques de stunnel.conf ──────────────
+  # Mapea cada puerto accept → puerto connect destino
+  declare -A stunnel_accept_to_connect=()
+  if [[ -f /etc/stunnel/stunnel.conf ]]; then
+    local current_accept=""
+    while IFS= read -r cline; do
+      cline="$(echo "$cline" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')"
+      [[ -z "$cline" || "$cline" == \#* ]] && continue
+      if [[ "$cline" == accept* ]]; then
+        current_accept="$(echo "$cline" | awk -F'=' '{print $2}' | awk -F: '{print $NF}' | tr -d ' ')"
+      elif [[ "$cline" == connect* && -n "$current_accept" ]]; then
+        local cdest
+        cdest="$(echo "$cline" | awk -F'=' '{print $2}' | awk -F: '{print $NF}' | tr -d ' ')"
+        stunnel_accept_to_connect["$current_accept"]="$cdest"
+        current_accept=""
+      fi
+    done < /etc/stunnel/stunnel.conf
+  fi
+
+  # ── Mapear qué proceso escucha en cada puerto ──────────
+  declare -A port_to_proc=()
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    local p pr
+    p="$(echo "$line" | awk '{print $5}' | awk -F: '{print $NF}')"
+    pr="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p')"
+    [[ -n "$p" && -n "$pr" ]] && port_to_proc["$p"]="$pr"
+  done <<< "$ss_output"
+
+  # ── Procesos del sistema que NO queremos mostrar ───────
+  # systemd-network, systemd-resolve, cupsd, etc.
+  is_system_process() {
+    case "$1" in
+      systemd-network*|systemd-resolve*|systemd-timesyn*|cupsd|chronyd|dbus-daemon|snapd|multipathd|accounts-daemon|polkitd|networkd-*|resolved)
+        return 0 ;;
+      *)
+        return 1 ;;
+    esac
+  }
+
+  # ── Recorrer todos los sockets ─────────────────────────
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     local proto port proc
@@ -111,6 +150,9 @@ get_active_ports() {
     proc="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p')"
     [[ -z "$proc" ]] && continue
 
+    # Saltar procesos del sistema
+    is_system_process "$proc" && continue
+
     local svc_name=""
     case "$proc" in
       sshd)              svc_name="SSH" ;;
@@ -118,10 +160,22 @@ get_active_ports() {
       v2ray)             svc_name="V2RAY" ;;
       xray)              svc_name="XRAY" ;;
       squid|squid3)      svc_name="SQUID" ;;
-      stunnel|stunnel4)  svc_name="SSL WS" ;;
+      stunnel|stunnel4)
+        # Clasificar cada puerto stunnel individualmente
+        local dest_p="${stunnel_accept_to_connect[$port]:-}"
+        if [[ -n "$dest_p" ]]; then
+          local dest_proc="${port_to_proc[$dest_p]:-}"
+          case "$dest_proc" in
+            python|python2|python3) svc_name="SSL WS" ;;
+            *)                      svc_name="SSL" ;;
+          esac
+        else
+          svc_name="SSL"
+        fi
+        ;;
       openvpn)           svc_name="OPENVPN" ;;
       badvpn-udpgw)      svc_name="BADVPN" ;;
-      python3|python)    svc_name="PYTHON" ;;
+      python|python2|python3) svc_name="PYTHON" ;;
       nginx)             svc_name="NGINX" ;;
       node)              svc_name="NODE" ;;
       udp-custom|udpgw)  svc_name="UDPCUSTOM" ;;
@@ -130,13 +184,11 @@ get_active_ports() {
       *)                 svc_name="$proc" ;;
     esac
 
-    # Omitir puertos UDP internos de v2ray/xray
     if [[ "$proto" == "UDP" && ("$svc_name" == "V2RAY" || "$svc_name" == "XRAY") ]]; then
       continue
     fi
 
     local port_label="$port"
-    [[ "$proto" == "UDP" ]] && port_label="${port}"
 
     if [[ -z "${svc_ports[$svc_name]:-}" ]]; then
       svc_ports[$svc_name]="$port_label"
@@ -145,11 +197,10 @@ get_active_ports() {
     fi
   done <<< "$ss_output"
 
-  # Clasificar en principales vs extras
   for svc in "${!svc_ports[@]}"; do
     local p="${svc_ports[$svc]}"
     case "$svc" in
-      SSH|DROPBEAR|PYTHON|SQUID|NGINX|SSL\ WS|OPENVPN|V2RAY|XRAY)
+      SSH|DROPBEAR|PYTHON|SQUID|NGINX|SSL|SSL\ WS|OPENVPN|V2RAY|XRAY)
         PORTS_MAIN+="⇥ ${svc}: ${p}\n"
         ;;
       SLOWDNS)
@@ -161,7 +212,6 @@ get_active_ports() {
     esac
   done
 
-  # SlowDNS: intentar obtener nameserver y key
   if [[ -f /etc/SN/slowdns/ns.txt ]]; then
     SLOWDNS_NS="$(cat /etc/SN/slowdns/ns.txt 2>/dev/null)"
   fi
@@ -173,7 +223,7 @@ get_active_ports() {
 }
 
 # =========================================================
-# MOSTRAR INFO COMPLETA DEL USUARIO CREADO (estilo HTTP Custom)
+# MOSTRAR INFO COMPLETA DEL USUARIO 
 # =========================================================
 show_user_info() {
   local usuario="$1"
@@ -438,7 +488,6 @@ add_user() {
       zip_ovpn="$HOME/${user}.zip"
     fi
 
-    # Mostrar info completa estilo HTTP Custom
     show_user_info "$user" "$pass_raw" "$dias" "$limite" "$zip_ovpn"
     return 0
   else
@@ -862,8 +911,6 @@ edit_user() {
   done
 
   edit_user_fun "${useredit}" "${senhauser}" "${diasuser}" "${limiteuser}"
-
-  # Mostrar info completa del usuario editado
   show_user_info "$useredit" "$senhauser" "$diasuser" "$limiteuser"
 }
 
@@ -1030,7 +1077,6 @@ sshmonitor() {
       "$user" "$estado_txt" "$conex ($s2ssh/$udp_proc)" "$timerr"
   done
 
-  # Usuarios UDP sin cuenta del sistema
   if [[ -f "$UDP_LOG_FILE" ]]; then
     declare -A seen_sys
     for u in $(echo "$cat_users" | awk -F: '{print $1}'); do seen_sys["$u"]=1; done
@@ -1173,25 +1219,83 @@ rm_vencidos() {
 }
 
 # =========================================================
-# LIMITADOR DE CUENTAS
+# LIMITADOR DE CUENTAS (INTEGRADO)
 # =========================================================
 numero='^[0-9]+$'
+LIMITADOR_PID_FILE="${VPS_user}/limitador.pid"
+LIMITADOR_LOG="${VPS_user}/limit.log"
+LIMITADOR_BLOQUEADOS="${VPS_user}/limitador_bloqueados.txt"
 
+# ── Verificar si el limitador está corriendo ─────────────
+limitador_esta_corriendo() {
+  if [[ -f "$LIMITADOR_PID_FILE" ]]; then
+    local pid
+    pid=$(cat "$LIMITADOR_PID_FILE" 2>/dev/null)
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      return 0
+    else
+      rm -f "$LIMITADOR_PID_FILE"
+      return 1
+    fi
+  fi
+  return 1
+}
+
+# ── Función del limitador de expirados ───────────────────
+_limitador_expirados() {
+  [[ ! -f "$LIMITADOR_LOG" ]] && touch "$LIMITADOR_LOG"
+  local fecha_actual
+  fecha_actual=$(date +%s)
+
+  local users_list
+  users_list=$(grep 'home' /etc/passwd | grep 'false' | grep -v 'syslog' | grep -v 'hwid' | grep -v 'token' | awk -F ':' '{print $1}')
+
+  for user in $users_list; do
+    [[ -z "$user" ]] && continue
+    local fecha_exp
+    fecha_exp=$(chage -l "$user" 2>/dev/null | sed -n '4p' | awk -F ': ' '{print $2}')
+    [[ "$fecha_exp" = @(never|nunca) ]] && continue
+    [[ -z "$fecha_exp" ]] && continue
+
+    local fecha_exp_sec
+    fecha_exp_sec=$(date +%s --date="$fecha_exp" 2>/dev/null) || continue
+
+    if [[ "$fecha_exp_sec" -lt "$fecha_actual" ]]; then
+      pkill -u "$user" 2>/dev/null
+      local dl
+      dl=$(ps aux | grep dropbear | grep -v grep | grep -w "$user" | awk '{print $2}')
+      [[ -n "$dl" ]] && kill -9 $dl 2>/dev/null
+      userdel --force "$user" 2>/dev/null
+      sed -i "/$user/d" "${VPS_user}/passwd" 2>/dev/null
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] EXPIRADO ELIMINADO: $user (vencido: $fecha_exp)" >> "$LIMITADOR_LOG"
+    fi
+  done
+}
+
+# ── Menú del limitador ───────────────────────────────────
 limiter() {
   ltr() {
     clear
     msg -bar
-    for i in $(atq 2>/dev/null | awk '{print $1}'); do
-      if [[ -n "$(at -c "$i" 2>/dev/null | grep 'limitador.sh')" ]]; then
-        atrm "$i" 2>/dev/null
-        sed -i '/limitador.sh/d' /var/spool/cron/crontabs/root 2>/dev/null
-        print_center -verd "Limitador detenido"
-        msg -bar
-        echo -e "${Y}            ►► Presione ENTER para continuar ◄◄${N}"
-        read
-        return
+
+    # Si ya está corriendo, preguntar si detener
+    if limitador_esta_corriendo; then
+      print_center -verd "El limitador está ACTIVO"
+      msg -bar
+      msg -ne " ¿Desea detenerlo? [S/N]: "
+      read resp
+      if [[ "${resp:-}" = @(s|S) ]]; then
+        local pid
+        pid=$(cat "$LIMITADOR_PID_FILE" 2>/dev/null)
+        [[ -n "$pid" ]] && kill "$pid" 2>/dev/null
+        rm -f "$LIMITADOR_PID_FILE"
+        print_center -verm2 "Limitador detenido"
       fi
-    done
+      msg -bar
+      echo -e "${Y}            ►► Presione ENTER para continuar ◄◄${N}"
+      read
+      return
+    fi
 
     print_center_bar "$(msg -ama "CONF LIMITADOR")"
     msg -bar
@@ -1241,9 +1345,100 @@ limiter() {
       echo "$opcion2" > "${VPS_user}/unlimit"
     done
 
-    nohup "${VPS_inst}/limitador.sh" &>/dev/null &
+    # Lanzar como proceso completamente independiente
+    (
+      trap '' HUP
+      exec 0</dev/null
+      exec 1>/dev/null
+      exec 2>/dev/null
+
+      local v_limit v_unlock
+      if [[ -f "${VPS_user}/limit" ]]; then
+        v_limit=$(cat "${VPS_user}/limit" 2>/dev/null)
+      else
+        v_limit=5
+      fi
+      if [[ -f "${VPS_user}/unlimit" ]]; then
+        v_unlock=$(cat "${VPS_user}/unlimit" 2>/dev/null)
+      else
+        v_unlock=0
+      fi
+      [[ ! "$v_limit" =~ ^[0-9]+$ ]] && v_limit=5
+      [[ ! "$v_unlock" =~ ^[0-9]+$ ]] && v_unlock=0
+
+      local c_unlock=0 c_actual=0
+      if [[ "$v_unlock" -gt 0 && "$v_limit" -gt 0 ]]; then
+        c_unlock=$(( v_unlock / v_limit ))
+        [[ "$c_unlock" -lt 1 ]] && c_unlock=1
+      fi
+
+      local LBLOQ="${VPS_user}/limitador_bloqueados.txt"
+      local LLOG="${VPS_user}/limit.log"
+      [[ ! -f "$LBLOQ" ]] && touch "$LBLOQ"
+      [[ ! -f "$LLOG" ]] && touch "$LLOG"
+
+      echo $BASHPID > "${VPS_user}/limitador.pid" 2>/dev/null || echo $$ > "${VPS_user}/limitador.pid"
+
+      while true; do
+        for usr in $(grep 'home' /etc/passwd | grep 'false' | grep -v 'syslog' | grep -v 'hwid' | grep -v 'token' | awk -F ':' '{print $1}'); do
+          [[ -z "$usr" ]] && continue
+
+          lmt=$(grep -w "$usr" /etc/passwd | awk -F ':' '{print $5}' | cut -d ',' -f1)
+          [[ ! "$lmt" =~ ^[0-9]+$ ]] && continue
+          [[ "$lmt" -eq 0 ]] && continue
+
+          sc=0; dc=0; oc=0; cnt=0
+          sc=$(ps -u "$usr" 2>/dev/null | grep -c sshd 2>/dev/null) || sc=0
+          sc=$((sc + 0))
+          dc=$(ps aux 2>/dev/null | grep -i dropbear | grep -w "$usr" | grep -v grep | wc -l 2>/dev/null) || dc=0
+          dc=$((dc + 0))
+          if [[ -e /etc/openvpn/openvpn-status.log ]]; then
+            oc=$(grep -c ",$usr," /etc/openvpn/openvpn-status.log 2>/dev/null) || oc=0
+            oc=$((oc + 0))
+          fi
+          cnt=$((sc + dc + oc))
+
+          if [[ "$cnt" -gt "$lmt" ]]; then
+            if [[ "$(passwd --status "$usr" 2>/dev/null | cut -d ' ' -f2)" = "P" ]]; then
+              pkill -u "$usr" 2>/dev/null
+              drl=$(ps aux | grep dropbear | grep -v grep | grep -w "$usr" | awk '{print $2}')
+              [[ -n "$drl" ]] && kill -9 $drl 2>/dev/null
+              usermod -L "$usr" 2>/dev/null
+              grep -qw "$usr" "$LBLOQ" 2>/dev/null || echo "$usr" >> "$LBLOQ"
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] BLOQUEADO: $usr (conexiones: $cnt / límite: $lmt)" >> "$LLOG"
+            fi
+          fi
+        done
+
+        if [[ "$c_unlock" -gt 0 ]]; then
+          c_actual=$((c_actual + 1))
+          if [[ "$c_actual" -ge "$c_unlock" ]]; then
+            if [[ -f "$LBLOQ" ]]; then
+              while IFS= read -r uu; do
+                [[ -z "$uu" ]] && continue
+                if [[ "$(passwd --status "$uu" 2>/dev/null | cut -d ' ' -f2)" = "L" ]]; then
+                  usermod -U "$uu" 2>/dev/null
+                  echo "[$(date '+%Y-%m-%d %H:%M:%S')] DESBLOQUEADO: $uu (automático)" >> "$LLOG"
+                fi
+              done < "$LBLOQ"
+              > "$LBLOQ"
+            fi
+            c_actual=0
+          fi
+        fi
+
+        sleep "$((v_limit * 60))"
+      done
+    ) &
+    local bg_pid=$!
+    echo "$bg_pid" > "$LIMITADOR_PID_FILE"
+    disown "$bg_pid" 2>/dev/null
+
+    # Esperar un momento para que el subshell escriba su PID real
+    sleep 1
+
     msg -bar
-    print_center -verd "Limitador en ejecución"
+    print_center -verd "Limitador en ejecución (PID: $(cat "$LIMITADOR_PID_FILE" 2>/dev/null))"
     msg -bar
     echo -e "${Y}            ►► Presione ENTER para continuar ◄◄${N}"
     read
@@ -1253,14 +1448,37 @@ limiter() {
     clear
     msg -bar
     local l_cron
-    l_cron=$(grep -w 'limitador.sh' /var/spool/cron/crontabs/root 2>/dev/null | grep -w 'ssh')
+    l_cron=$(grep -E 'lim_exp_cron|limitador.*--ssh' /var/spool/cron/crontabs/root 2>/dev/null)
     if [[ -z "$l_cron" ]]; then
-      echo '@daily /etc/SN/install/limitador.sh --ssh' >> /var/spool/cron/crontabs/root
-      print_center -verd "Limitador de expirados programado\nSe ejecutará todos los días a las 00hs"
+      cat > "${VPS_user}/lim_exp_cron.sh" << 'CRONEOF'
+#!/bin/bash
+VPS_user="/etc/SN"
+LOG_FILE="${VPS_user}/limit.log"
+[[ ! -f "$LOG_FILE" ]] && touch "$LOG_FILE"
+fecha_actual=$(date +%s)
+for user in $(grep 'home' /etc/passwd | grep 'false' | grep -v 'syslog' | grep -v 'hwid' | grep -v 'token' | awk -F ':' '{print $1}'); do
+  [[ -z "$user" ]] && continue
+  fecha_exp=$(chage -l "$user" 2>/dev/null | sed -n '4p' | awk -F ': ' '{print $2}')
+  [[ "$fecha_exp" = @(never|nunca) ]] && continue
+  [[ -z "$fecha_exp" ]] && continue
+  fecha_exp_sec=$(date +%s --date="$fecha_exp" 2>/dev/null) || continue
+  if [[ "$fecha_exp_sec" -lt "$fecha_actual" ]]; then
+    pkill -u "$user" 2>/dev/null
+    userdel --force "$user" 2>/dev/null
+    sed -i "/$user/d" "${VPS_user}/passwd" 2>/dev/null
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] EXPIRADO ELIMINADO: $user (vencido: $fecha_exp)" >> "$LOG_FILE"
+  fi
+done
+CRONEOF
+      chmod +x "${VPS_user}/lim_exp_cron.sh"
+      echo "@daily ${VPS_user}/lim_exp_cron.sh" >> /var/spool/cron/crontabs/root
+      print_center -verd "Limitador de expirados programado"
+      print_center -ama "Se ejecutará todos los días a las 00hs"
       enter
       return
     else
-      sed -i '/limitador.sh --ssh/d' /var/spool/cron/crontabs/root 2>/dev/null
+      sed -i '/lim_exp_cron.sh/d' /var/spool/cron/crontabs/root 2>/dev/null
+      sed -i '/limitador.*--ssh/d' /var/spool/cron/crontabs/root 2>/dev/null
       print_center -verm2 "Limitador de expirados detenido"
       enter
       return
@@ -1272,28 +1490,30 @@ limiter() {
     msg -bar
     print_center_bar "$(msg -ama "REGISTRO DEL LIMITADOR")"
     msg -bar
-    [[ ! -e "${VPS_user}/limit.log" ]] && touch "${VPS_user}/limit.log"
-    if [[ -z "$(cat "${VPS_user}/limit.log")" ]]; then
+    [[ ! -e "$LIMITADOR_LOG" ]] && touch "$LIMITADOR_LOG"
+    if [[ -z "$(cat "$LIMITADOR_LOG")" ]]; then
       print_center -ama "No hay registro de limitador"
       msg -bar
       sleep 2
       return
     fi
-    cat "${VPS_user}/limit.log"
+    cat "$LIMITADOR_LOG"
     msg -bar
     print_center -ama "►► ENTER para continuar | 0 para limpiar ◄◄"
     local opcion
     read opcion
-    [[ "$opcion" = "0" ]] && echo "" > "${VPS_user}/limit.log"
+    [[ "$opcion" = "0" ]] && echo "" > "$LIMITADOR_LOG"
   }
 
-  local lim_e
-  [[ $(grep -w 'limitador.sh' /var/spool/cron/crontabs/root 2>/dev/null | grep -w 'ssh') ]] \
-    && lim_e=$(msg -verd "[ON]") || lim_e=$(msg -verm2 "[OFF]")
+  # Estado actual para mostrar en el menú
+  local lim_con_e lim_exp_e
+  limitador_esta_corriendo && lim_con_e=$(msg -verd "[ON]") || lim_con_e=$(msg -verm2 "[OFF]")
+  [[ $(grep -E 'lim_exp_cron|limitador.*--ssh' /var/spool/cron/crontabs/root 2>/dev/null) ]] \
+    && lim_exp_e=$(msg -verd "[ON]") || lim_exp_e=$(msg -verm2 "[OFF]")
 
   title "🔒 LIMITADOR DE CUENTAS 🔒"
-  menu_func "LIMITADOR DE CONEXIONES" \
-            "LIMITADOR DE EXPIRADOS $lim_e" \
+  menu_func "LIMITADOR DE CONEXIONES $lim_con_e" \
+            "LIMITADOR DE EXPIRADOS $lim_exp_e" \
             "LOG DEL LIMITADOR"
   back
   msg -ne " Opción: "
@@ -1311,11 +1531,7 @@ limiter() {
 # =========================================================
 while :; do
   local_lim=$(msg -verm2 "[OFF]")
-  for i in $(atq 2>/dev/null | awk '{print $1}'); do
-    if [[ -n "$(at -c "$i" 2>/dev/null | grep 'limitador.sh')" ]]; then
-      local_lim=$(msg -verd "[ON]")
-    fi
-  done
+  limitador_esta_corriendo && local_lim=$(msg -verd "[ON]")
 
   title "ADMINISTRACIÓN DE USUARIOS SSH"
 
