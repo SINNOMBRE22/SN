@@ -9,9 +9,14 @@
 # - Spinner en cada dependencia
 # - Usa Sistema/go.sh local para instalar el core
 # - Mejor manejo de errores
+# - Modificado para permitir instalar V2Ray V5 (variable V2RAY_VERSION)
 # =========================================================
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ── Parámetro: versión deseada
+# Si lo dejas vacío instalará la última release disponible.
+V2RAY_VERSION=""  # Ejemplo: "v5.11.0" o dejar "" para última
 
 # ── Cargar colores desde lib ────────────────────────────
 LIB_COLORES="$ROOT_DIR/lib/colores.sh"
@@ -236,11 +241,19 @@ update_project() {
     echo -e "  ${W}${BOLD}Instalando V2Ray Core (go.sh local)...${N}"
     sep
     chmod +x "$go_sh"
-    bash "$go_sh" --version v4.45.2
+    if [[ -n "$V2RAY_VERSION" ]]; then
+      bash "$go_sh" --version "$V2RAY_VERSION"
+    else
+      bash "$go_sh"
+    fi
   else
     echo -e "  ${Y}⚠${N} ${W}go.sh local no encontrado, descargando...${N}"
     (
-      bash <(curl -L -s https://raw.githubusercontent.com/SINNOMBRE22/SN/main/Sistema/go.sh) --version v4.45.2
+      if [[ -n "$V2RAY_VERSION" ]]; then
+        bash <(curl -L -s https://raw.githubusercontent.com/SINNOMBRE22/SN/main/Sistema/go.sh) --version "$V2RAY_VERSION"
+      else
+        bash <(curl -L -s https://raw.githubusercontent.com/SINNOMBRE22/SN/main/Sistema/go.sh)
+      fi
     )
   fi
 
