@@ -41,14 +41,14 @@ mkdir -p "$SN_DIR" "$VPS_crt" "$(dirname "$LOGFILE")" 2>/dev/null || true
 progress_bar() {
   local msg="$1"
   local duration="${2:-3}"
-  local width=30
+  local width=20
   tput civis 2>/dev/null || true
   for ((i = 0; i <= width; i++)); do
     local pct=$(( i * 100 / width ))
     local bar_color="$R"
     (( pct > 33 )) && bar_color="$Y"
     (( pct > 66 )) && bar_color="$G"
-    printf "\r  ${C}•${N} ${W}%-25s${N} " "$msg"
+    printf "\r  ${C}•${N} ${W}%-20s${N} " "$msg"
     printf "${bar_color}"
     for ((j = 0; j < i; j++)); do printf "━"; done
     if (( i < width )); then printf "╸"; else printf "━"; fi

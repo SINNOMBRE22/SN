@@ -95,12 +95,13 @@ print_item_list() {
   printf "${W}> ${Y}%2s${W} ─ ${C}${BOLD}%-15s${N} %s\n" "$n" "$name" "$st"
 }
 
+# Aquí aplicamos ${Y} para que el título sea amarillo
 title_box() {
   local t="${1-}"
-  hr
-  echo -e "                 ${W}${BOLD} ░▒▓  ${t}  ▓▒░${N}"
-  hr
+  # Rojo para las barras, Amarillo para el título ($t), y vuelve a Rojo para cerrar
+  echo -e "${R}${BOLD}════════════════════[  ${Y}${t}${R}  ]═════════════════════${N}"
 }
+
 
 main_menu_single() {
   while true; do
