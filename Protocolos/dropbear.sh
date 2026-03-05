@@ -38,7 +38,7 @@ DROPBEAR_KEYS="/etc/dropbear"
 progress_bar() {
   local msg="$1"
   local duration="${2:-3}"
-  local width=30
+  local width=20
 
   tput civis 2>/dev/null || true
 
@@ -49,7 +49,7 @@ progress_bar() {
     (( pct > 33 )) && bar_color="$Y"
     (( pct > 66 )) && bar_color="$G"
 
-    printf "\r  ${C}•${N} ${W}%-25s${N} " "$msg"
+    printf "\r  ${C}•${N} ${W}%-20s${N} " "$msg"
 
     printf "${bar_color}"
     for ((j = 0; j < i; j++)); do printf "━"; done
