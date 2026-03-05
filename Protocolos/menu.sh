@@ -2,9 +2,8 @@
 set -euo pipefail
 
 # =========================================================
-# SinNombre v1.0 - INSTALADORES (Protocolos) - MENÚ ÚNICO
-# Creador: @SIN_NOMBRE22
-# Archivo: SN/Protocolos/menu.sh
+# SinNombre v1.0 - INSTALADORES (Protocolos) - MENÚ VISUAL (lista una sola, con espacios)
+# Adaptación visual por Copilot, 2026-03-05
 # =========================================================
 
 R='\033[0;31m'
@@ -14,7 +13,6 @@ B='\033[0;34m'
 C='\033[0;36m'
 W='\033[1;37m'
 N='\033[0m'
-D='\033[2m'
 BOLD='\033[1m'
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,7 +28,7 @@ run_proto() {
   else
     echo ""
     echo -e "${Y}${BOLD}Módulo no disponible:${N} ${C}${rel:-"(sin ruta)"}${N}"
-    echo -e "${D}Estado:${N} ${Y}En desarrollo...${N}"
+    echo -e "${R}Estado:${N} ${Y}En desarrollo...${N}"
     pause
   fi
 }
@@ -38,27 +36,19 @@ run_proto() {
 is_active_systemd() { systemctl is-active --quiet "$1" 2>/dev/null; }
 status_badge() { [[ "${1:-false}" == "true" ]] && echo -e "${G}[ ON ]${N}" || echo -e "${R}[OFF]${N}"; }
 
-check_ssh_status() { ( is_active_systemd ssh || is_active_systemd sshd ) && echo "true" || echo "false"; }
-check_dropbear_status() { ( is_active_systemd dropbear || pgrep -x dropbear >/dev/null 2>&1 ) && echo "true" || echo "false"; }
-check_stunnel_status() { ( is_active_systemd stunnel4 || pgrep -x stunnel4 >/dev/null 2>&1 ) && echo "true" || echo "false"; }
-check_squid_status() { ( is_active_systemd squid || is_active_systemd squid3 ) && echo "true" || echo "false"; }
-check_haproxy_mux_status() { ( is_active_systemd haproxy-mux || is_active_systemd haproxy ) && echo "true" || echo "false"; }
-
-# Añadido: comprobación de estado para SlowDNS / dnstt
+check_ssh_status()        { ( is_active_systemd ssh || is_active_systemd sshd ) && echo "true" || echo "false"; }
+check_dropbear_status()   { ( is_active_systemd dropbear || pgrep -x dropbear >/dev/null 2>&1 ) && echo "true" || echo "false"; }
+check_stunnel_status()    { ( is_active_systemd stunnel4 || pgrep -x stunnel4 >/dev/null 2>&1 ) && echo "true" || echo "false"; }
+check_squid_status()      { ( is_active_systemd squid || is_active_systemd squid3 ) && echo "true" || echo "false"; }
+check_haproxy_mux_status(){ ( is_active_systemd haproxy-mux || is_active_systemd haproxy ) && echo "true" || echo "false"; }
 check_slowdns_status() {
-  # Comprobar servicios systemd comunes usados para dnstt (adaptar si usas otros nombres)
   if is_active_systemd dnstt.service || is_active_systemd dnstt-client.service || is_active_systemd dnstt-server.service \
      || is_active_systemd sn-dnstt-client.service || is_active_systemd sn-dnstt-server.service; then
-    echo "true"
-    return 0
+    echo "true"; return 0
   fi
-
-  # Si no hay unidad systemd, comprobar procesos en ejecución
   if pgrep -f 'dnstt|slowdns|dnstt-client|dnstt-server' >/dev/null 2>&1; then
-    echo "true"
-    return 0
+    echo "true"; return 0
   fi
-
   echo "false"
 }
 
@@ -77,31 +67,14 @@ py_socks_is_on() {
   return 1
 }
 
-check_socks_status() { py_socks_is_on && echo "true" || echo "false"; }
-check_v2ray_status() { ( is_active_systemd v2ray || is_active_systemd xray ) && echo "true" || echo "false"; }
-check_udp_custom_status() { pgrep -f 'udp-custom|udpcustom|udp_custom' >/dev/null 2>&1 && echo "true" || echo "false"; }
-check_badvpn_status() { pgrep -x badvpn-udpgw >/dev/null 2>&1 && echo "true" || echo "false"; }
+check_socks_status()     { py_socks_is_on && echo "true" || echo "false"; }
+check_v2ray_status()     { ( is_active_systemd v2ray || is_active_systemd xray ) && echo "true" || echo "false"; }
+check_udp_custom_status(){ pgrep -f 'udp-custom|udpcustom|udp_custom' >/dev/null 2>&1 && echo "true" || echo "false"; }
+check_badvpn_status()    { pgrep -x badvpn-udpgw >/dev/null 2>&1 && echo "true" || echo "false"; }
 
-# =========================================================
-# UI FIJA AL CUADRO (58 chars visibles)
-# =========================================================
-BOX_W=58
 BOX_LINE="══════════════════════════ / / / ══════════════════════════"
-
 hr() { echo -e "${R}${BOX_LINE}${N}"; }
-
-print_item_list() {
-  local n="${1}" name="${2}" st="${3}"
-  printf "${W}> ${Y}%2s${W} ─ ${C}${BOLD}%-15s${N} %s\n" "$n" "$name" "$st"
-}
-
-# Aquí aplicamos ${Y} para que el título sea amarillo
-title_box() {
-  local t="${1-}"
-  # Rojo para las barras, Amarillo para el título ($t), y vuelve a Rojo para cerrar
-  echo -e "${R}${BOLD}════════════════════[  ${Y}${t}${R}  ]═════════════════════${N}"
-}
-
+sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
 
 main_menu_single() {
   while true; do
@@ -112,51 +85,51 @@ main_menu_single() {
     ssh_st="$(status_badge "$(check_ssh_status)")"
     dropbear_st="$(status_badge "$(check_dropbear_status)")"
     stunnel_st="$(status_badge "$(check_stunnel_status)")"
-    squid_st="$(status_badge "$(check_squid_status)")"
     socks_st="$(status_badge "$(check_socks_status)")"
-    v2_st="$(status_badge "$(check_v2ray_status)")"
-    udp_st="$(status_badge "$(check_udp_custom_status)")"
+    squid_st="$(status_badge "$(check_squid_status)")"
     badvpn_st="$(status_badge "$(check_badvpn_status)")"
+    udp_st="$(status_badge "$(check_udp_custom_status)")"
+    v2_st="$(status_badge "$(check_v2ray_status)")"
     haproxy_st="$(status_badge "$(check_haproxy_mux_status)")"
     slowdns_st="$(status_badge "$(check_slowdns_status)")"
- #   websoket_st="$(status_badge "$(check_websoket_status)")"
-    title_box "INSTALADORES"
-    echo ""
-
-    print_item_list "01" "AJUSTES SSH" "$ssh_st"
-    print_item_list "02" "DROPBEAR" "$dropbear_st"
-    print_item_list "03" "STUNNEL (SSL)" "$stunnel_st"
-    print_item_list "04" "SOCKS (PYTHON)" "$socks_st"
-    print_item_list "05" "SQUID PROXY" "$squid_st"
-    print_item_list "06" "BADVPN-UDPGW" "$badvpn_st"
-    print_item_list "07" "UDP-CUSTOM" "$udp_st"
-    print_item_list "08" "V2RAY" "$v2_st"
-    print_item_list "09" "HAPROXY MUX" "$haproxy_st"
-    print_item_list "10" "SLOWDNS" "$slowdns_st"
-#    print_item_list "10" "WEBSOKET" "$websoket_st"
-
-    echo ""
-    printf "${W}> ${Y}%2s${W} ─ ${C}${BOLD}%-15s${N}\n" "00" "VOLVER"
 
     hr
+    echo -e "${W}               INSTALADORES & PROTOCOLOS${N}"
+    hr
+
+    # Lista única, con un espacio entre cada protocolo
+    printf "${R}[${Y}1${R}]${N}  ${C}AJUSTES SSH${N}        %s\n\n"      "$ssh_st"
+    printf "${R}[${Y}2${R}]${N}  ${C}DROPBEAR${N}           %s\n\n"      "$dropbear_st"
+    printf "${R}[${Y}3${R}]${N}  ${C}STUNNEL (SSL)${N}      %s\n\n"      "$stunnel_st"
+    printf "${R}[${Y}4${R}]${N}  ${C}SOCKS (PYTHON)${N}     %s\n\n"      "$socks_st"
+    printf "${R}[${Y}5${R}]${N}  ${C}SQUID PROXY${N}        %s\n\n"      "$squid_st"
+    printf "${R}[${Y}6${R}]${N}  ${C}BADVPN-UDPGW${N}       %s\n\n"      "$badvpn_st"
+    printf "${R}[${Y}7${R}]${N}  ${C}UDP-CUSTOM${N}         %s\n\n"      "$udp_st"
+    printf "${R}[${Y}8${R}]${N}  ${C}V2RAY${N}              %s\n\n"      "$v2_st"
+    printf "${R}[${Y}9${R}]${N}  ${C}HAPROXY MUX${N}        %s\n\n"      "$haproxy_st"
+    printf "${R}[${Y}10${R}]${N} ${C}SLOWDNS${N}            %s\n\n"      "$slowdns_st"
+    sep
+    printf "${R}[${Y}0${R}]${N}  ${C}VOLVER${N}\n"
+    hr
+
     echo ""
     echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
     echo -ne "╰─> : ${G}"
     read -r op
+    echo -ne "${N}"
 
     case "${op:-}" in
-      01|1) run_proto "Protocolos/ssh.sh" ;;
-      02|2) run_proto "Protocolos/dropbear.sh" ;;
-      03|3) run_proto "Protocolos/stunnel.sh" ;;
-      04|4) run_proto "Protocolos/socks.sh" ;;
-      05|5) run_proto "Protocolos/squid.sh" ;;
-      06|6) run_proto "Protocolos/badvpn.sh" ;;
-      07|7) run_proto "Protocolos/udp-custom.sh" ;;
-      08|8) run_proto "Protocolos/v2ray.sh" ;;
-      09|9) run_proto "Protocolos/haproxy_mux.sh" ;;
-      10|10) run_proto "Protocolos/slowdns.sh" ;;
-  #    10|10 run_proto "Protocolos/websoket/websoket.sh"
-      00|0) break ;;
+      1|01) run_proto "Protocolos/ssh.sh" ;;
+      2|02) run_proto "Protocolos/dropbear.sh" ;;
+      3|03) run_proto "Protocolos/stunnel.sh" ;;
+      4|04) run_proto "Protocolos/socks.sh" ;;
+      5|05) run_proto "Protocolos/squid.sh" ;;
+      6|06) run_proto "Protocolos/badvpn.sh" ;;
+      7|07) run_proto "Protocolos/udp-custom.sh" ;;
+      8|08) run_proto "Protocolos/v2ray.sh" ;;
+      9|09) run_proto "Protocolos/haproxy_mux.sh" ;;
+      10)   run_proto "Protocolos/slowdns.sh" ;;
+      0|00) break ;;
       *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
     esac
   done
