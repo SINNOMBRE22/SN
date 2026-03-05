@@ -1,8 +1,5 @@
 #!/bin/bash
 # =========================================================
-# SinNombre v2.0 - GESTIÓN DE USUARIOS V2RAY (VMess + VLESS)
-# Archivo: SN/Usuarios/v2ray.sh
-#
 # Ambos protocolos en el mismo config.json:
 # - inbound tag "vless-in" → protocolo vless
 # - inbound tag "vmess-in" → protocolo vmess
@@ -20,7 +17,7 @@ else
   R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
   C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'; D='\033[2m'; BOLD='\033[1m'
   hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
-  sep() { echo -e "${R}────────────────────��─────────────────────────────────────${N}"; }
+  sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
   pause(){ echo ""; read -r -p "Presiona Enter para continuar..."; }
 fi
 
@@ -29,50 +26,10 @@ LOGFILE="/var/log/v2ray_manager.log"
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 V2RAY_CONFIG="/etc/v2ray/config.json"
 config=""
-config_type=""
 numero='^[0-9]+$'
 tx_num='^[a-zA-Z0-9_]+$'
 
 mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true
-
-# =========================================================
-#  DETECTAR CONFIG Y CORE
-# =========================================================
-
-detect_config() {
-  config=""
-  config_type=""
-  local configs=()
-  if [[ -f "$XRAY_CONFIG" ]]; then
-    configs+=("$XRAY_CONFIG")
-  fi
-  if [[ -f "$V2RAY_CONFIG" ]]; then
-    configs+=("$V2RAY_CONFIG")
-  fi
-
-  if (( ${#configs[@]} == 0 )); then
-    config=""
-    config_type=""
-  elif (( ${#configs[@]} == 1 )); then
-    config="${configs[0]}"
-    config_type=$(basename "$(dirname "$config")") # xray o v2ray
-  else
-    echo -e "${Y}⚠ Se detectan dos configuraciones:${N}"
-    echo -e "  ${G}[1]${N} V2Ray: ${V2RAY_CONFIG}"
-    echo -e "  ${G}[2]${N} Xray:  ${XRAY_CONFIG}"
-    sep
-    while true; do
-      echo -ne "${W}¿Cuál quieres gestionar? [1/2]: ${G}"
-      read -r cfg_choice
-      echo -ne "${N}"
-      case "$cfg_choice" in
-        1) config="${V2RAY_CONFIG}"; config_type="v2ray"; break ;;
-        2) config="${XRAY_CONFIG}"; config_type="xray"; break ;;
-        *) echo -e "${R}Opción inválida${N}" ;;
-      esac
-    done
-  fi
-}
 
 # =========================================================
 #  ANIMACIONES
@@ -106,6 +63,16 @@ spinner() {
 
 log_msg() {
   echo "$(date '+%Y-%m-%d %H:%M:%S'): $*" >> "$LOGFILE"
+}
+
+detect_config() {
+  if [[ -f "$XRAY_CONFIG" ]]; then
+    config="$XRAY_CONFIG"
+  elif [[ -f "$V2RAY_CONFIG" ]]; then
+    config="$V2RAY_CONFIG"
+  else
+    config=""
+  fi
 }
 
 check_deps() {
@@ -832,8 +799,6 @@ main_menu() {
 
     hr
     echo -e "${W}${BOLD}        GESTIÓN DE USUARIOS (VMess + VLESS)${N}"
-    echo -e "  ${D}Archivo de configuración: ${C}${config}${N}"
-    echo -e "  ${D}Core: ${Y}${config_type^^}${N}"
     hr
     echo -e "  ${W}PUERTO:${N}  ${Y}${port_v2}${N}"
     echo -e "  ${W}VLESS:${N}   ${C}${vless_c} usuarios${N}   ${W}VMESS:${N}  ${C}${vmess_c} usuarios${N}"
