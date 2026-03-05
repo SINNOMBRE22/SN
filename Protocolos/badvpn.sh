@@ -28,7 +28,7 @@ fi
 # ── Rutas ───────────────────────────────────────────────
 BIN="/usr/bin/badvpn-udpgw"
 SVC="/etc/systemd/system/badvpn.service"
-LOCK="/root/udp-rufu"
+LOCK="/root/udp-SN"
 
 # =========================================================
 #  ANIMACIONES
