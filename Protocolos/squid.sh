@@ -7,10 +7,17 @@
 # - Usa lib/colores.sh (sin colores duplicados)
 # - Barra de progreso fina (━╸) + spinner profesional
 # - Desinstalación real (purge + eliminar configs/ACLs/logs)
-# - Función squid_restart() centralizada (no repetida 8 veces)
+# - Función squid_restart() centralizada
 # - Función squid_conf() detecta squid/squid3 una sola vez
 # - Corrección de errores, validaciones, ortografía
 # - Menú con estado y puertos en header
+#
+# FIX (2026-03-05):
+# - Instalación: intenta squid → squid-openssl → squid3
+# - Si /etc/squid/ no existe después de instalar, lo crea
+# - Muestra log real de apt-get si falla
+# - Inicializa cache de squid antes de arrancar
+# - Muestra diagnóstico de systemctl si el servicio no inicia
 # =========================================================
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -39,58 +46,66 @@ progress_bar() {
   local msg="$1"
   local duration="${2:-3}"
   local width=20
-  tput civis # Ocultar cursor
+
+  tput civis 2>/dev/null || true
 
   for ((i = 0; i <= width; i++)); do
     local pct=$(( i * 100 / width ))
-    # Definir color según progreso
+
     local bar_color="$R"
     (( pct > 33 )) && bar_color="$Y"
     (( pct > 66 )) && bar_color="$G"
 
-    # CONSEJO: Usamos \r al inicio y NO usamos \n al final
-    printf "\r  ${C}•${N} ${W}%-20s${N} ${bar_color}" "$msg"
-    
+    printf "\r  ${C}•${N} ${W}%-20s${N} " "$msg"
+
+    printf "${bar_color}"
     for ((j = 0; j < i; j++)); do printf "━"; done
-    (( i < width )) && printf "╸" || printf "━"
+
+    if (( i < width )); then
+      printf "╸"
+    else
+      printf "━"
+    fi
 
     printf "${D}"
     for ((j = i + 1; j < width; j++)); do printf "━"; done
-    
-    # El truco: %3d%% para mantener el ancho constante
+
     printf "${N} ${W}%3d%%${N}" "$pct"
 
-    # Importante: sleep con valores pequeños para suavidad
-    sleep "$(echo "scale=4; $duration / $width" | bc -l 2>/dev/null || echo "0.1")"
+    sleep "$(echo "scale=4; $duration / $width" | bc 2>/dev/null || echo "0.08")"
   done
 
-  echo -e "  ${G}✓${N}" # Nueva línea solo al terminar
-  tput cnorm # Mostrar cursor
+  echo -e "  ${G}✓${N}"
+  tput cnorm 2>/dev/null || true
 }
+
 spinner() {
   local pid="$1"
   local msg="${2:-Procesando...}"
   local frames=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
   local i=0
-  tput civis
+
+  tput civis 2>/dev/null || true
 
   while kill -0 "$pid" 2>/dev/null; do
-    # \e[K borra rastro de texto anterior
-    printf "\r  ${C}${frames[$i]}${N} ${W}%s${N}\e[K" "$msg"
+    printf "\r  ${C}${frames[$i]}${N} ${W}%s${N}" "$msg"
     i=$(( (i + 1) % ${#frames[@]} ))
     sleep 0.1
   done
 
-  wait "$pid"
-  local res=$?
-  
-  if [[ $res -eq 0 ]]; then
-    printf "\r  ${G}✓${N} ${W}%-50s${N}\e[K\n" "$msg"
+  wait "$pid" 2>/dev/null
+  local exit_code=$?
+
+  if [[ $exit_code -eq 0 ]]; then
+    printf "\r  ${G}✓${N} ${W}%-50s${N}\n" "$msg"
   else
-    printf "\r  ${R}✗${N} ${W}%-50s${N}\e[K\n" "$msg"
+    printf "\r  ${R}✗${N} ${W}%-50s${N}\n" "$msg"
   fi
-  tput cnorm
+
+  tput cnorm 2>/dev/null || true
+  return $exit_code
 }
+
 # =========================================================
 #  UTILIDADES
 # =========================================================
@@ -105,7 +120,6 @@ require_root() {
   fi
 }
 
-# Detectar si squid está instalado y dónde está el config
 squid_conf() {
   if [[ -e /etc/squid/squid.conf ]]; then
     echo "/etc/squid/squid.conf"
@@ -117,7 +131,15 @@ squid_conf() {
 }
 
 squid_svc() {
-  [[ -d /etc/squid ]] && echo "squid" || echo "squid3"
+  # Buscar cuál servicio existe en systemd
+  for s in squid squid3; do
+    if systemctl list-unit-files 2>/dev/null | grep -q "^${s}.service"; then
+      echo "$s"
+      return
+    fi
+  done
+  # Fallback por directorio
+  [[ -d /etc/squid3 ]] && echo "squid3" || echo "squid"
 }
 
 is_installed() {
@@ -147,7 +169,6 @@ fun_ip() {
     || echo "127.0.0.1"
 }
 
-# Reiniciar squid (centralizado — se usa en todas las funciones)
 squid_restart() {
   local svc
   svc="$(squid_svc)"
@@ -184,15 +205,12 @@ install_squid() {
       continue
     fi
 
-    # Validar cada puerto
-    local valid_ports="" invalid=false
+    local valid_ports=""
     for p in $input_ports; do
       if [[ ! "$p" =~ ^[0-9]+$ ]] || (( p < 1 || p > 65535 )); then
         echo -e "  ${R}✗${N} ${W}Puerto ${Y}${p}${W} inválido${N}"
-        invalid=true
       elif mportas | grep -qx "$p"; then
         echo -e "  ${R}✗${N} ${W}Puerto ${Y}${p}${W} ya está en uso${N}"
-        invalid=true
       else
         echo -e "  ${G}✓${N} ${W}Puerto ${Y}${p}${W} disponible${N}"
         valid_ports="$valid_ports $p"
@@ -211,37 +229,76 @@ install_squid() {
   echo ""
   sep
 
-  # Paso 1: Actualizar repos
+  # Paso 1: Actualizar repos (spinner — espera al proceso)
   (
     apt-get update -y >/dev/null 2>&1 || true
   ) &
   spinner $! "Actualizando repositorios..."
 
-  # Paso 2: Instalar squid
-  progress_bar "Instalando Squid" 3
-  apt-get install -y squid >/dev/null 2>&1 || apt-get install -y squid3 >/dev/null 2>&1 || {
-    echo -e "  ${R}✗${N} ${W}Error al instalar Squid${N}"
-    pause
-    return
-  }
+  # Paso 2: Instalar squid — intentar múltiples nombres de paquete
+  local install_log="/tmp/sn_squid_install.log"
+  local install_ok=false
 
-  # Paso 3: Crear archivos ACL
-  progress_bar "Creando ACLs" 1
-  [[ ! -f "$HOSTS_DENY" ]] && echo ".ejemplo.com/" > "$HOSTS_DENY"
-  [[ ! -f "$REGEX_DENY" ]] && echo "torrent" > "$REGEX_DENY"
+  for pkg in squid squid-openssl squid3; do
+    (
+      DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" >"$install_log" 2>&1
+    ) &
+    spinner $! "Intentando instalar paquete: ${pkg}..."
 
-  # Paso 4: Detectar config y escribir
-  local conf
-  conf="$(squid_conf)"
-  if [[ -z "$conf" ]]; then
-    echo -e "  ${R}✗${N} ${W}No se encontró squid.conf después de instalar${N}"
+    # Verificar si se instaló correctamente
+    if dpkg -l "$pkg" 2>/dev/null | grep -qE '^[hi]i'; then
+      echo -e "  ${G}✓${N} ${W}Paquete ${Y}${pkg}${W} instalado correctamente${N}"
+      install_ok=true
+      break
+    fi
+  done
+
+  if ! $install_ok; then
+    echo ""
+    echo -e "  ${R}✗${N} ${W}No se pudo instalar ningún paquete de Squid${N}"
+    sep
+    echo -e "  ${D}Último log de instalación:${N}"
+    echo ""
+    tail -n 20 "$install_log" 2>/dev/null || echo -e "  ${D}(sin log disponible)${N}"
+    sep
+    echo ""
+    echo -e "  ${W}Posibles soluciones:${N}"
+    echo -e "    ${C}•${N} Verifica tu conexión a internet"
+    echo -e "    ${C}•${N} Ejecuta: ${C}apt-get update && apt-get install squid${N}"
+    echo -e "    ${C}•${N} En Ubuntu 24.04+: ${C}apt-get install squid-openssl${N}"
+    echo ""
+    rm -f "$install_log" 2>/dev/null || true
     pause
     return
   fi
 
+  rm -f "$install_log" 2>/dev/null || true
+
+  # Paso 3: Asegurar que el directorio de config existe
+  local squid_dir=""
+  if [[ -d /etc/squid ]]; then
+    squid_dir="/etc/squid"
+  elif [[ -d /etc/squid3 ]]; then
+    squid_dir="/etc/squid3"
+  else
+    # Crear el directorio manualmente si el paquete no lo creó
+    echo -e "  ${Y}⚠${N} ${W}Directorio /etc/squid/ no existe, creándolo...${N}"
+    mkdir -p /etc/squid
+    squid_dir="/etc/squid"
+  fi
+
+  local conf="${squid_dir}/squid.conf"
+
+  # Paso 4: Crear archivos ACL (instantáneo — barra OK)
+  progress_bar "Creando ACLs" 1
+  [[ ! -f "$HOSTS_DENY" ]] && echo ".ejemplo.com/" > "$HOSTS_DENY"
+  [[ ! -f "$REGEX_DENY" ]] && echo "torrent" > "$REGEX_DENY"
+
+  # Paso 5: Obtener IP pública
   local ip
   ip="$(fun_ip)"
 
+  # Paso 6: Escribir configuración (instantáneo — barra OK)
   progress_bar "Escribiendo configuración" 2
   cat > "$conf" <<EOF
 # Configuración Squid - SinNombre v2.0
@@ -290,24 +347,61 @@ refresh_pattern . 0 20% 4320
 visible_hostname VPS-SN
 EOF
 
-  # Paso 5: Iniciar servicio
-  local svc
-  svc="$(squid_svc)"
+  # Paso 7: Detectar nombre del servicio e iniciar
+  local svc=""
+  for s in squid squid3; do
+    if systemctl list-unit-files 2>/dev/null | grep -q "^${s}.service"; then
+      svc="$s"
+      break
+    fi
+  done
+
+  # Fallback: usar el nombre del directorio
+  if [[ -z "$svc" ]]; then
+    [[ "$squid_dir" == "/etc/squid3" ]] && svc="squid3" || svc="squid"
+  fi
+
   (
+    # Crear directorio de cache si no existe
+    mkdir -p /var/spool/squid 2>/dev/null || true
+    # Inicializar cache de squid (necesario en primera instalación)
+    "$svc" -z >/dev/null 2>&1 || squid -z >/dev/null 2>&1 || true
     systemctl enable "$svc" >/dev/null 2>&1 || true
     systemctl restart "$svc" >/dev/null 2>&1 || service "$svc" restart >/dev/null 2>&1 || true
-    sleep 1
+    sleep 2
   ) &
   spinner $! "Iniciando servicio ${svc}..."
 
+  # Verificar estado final
   echo ""
+  local final_running=false
+  if systemctl is-active --quiet "$svc" 2>/dev/null; then
+    final_running=true
+  fi
+
   hr
-  echo -e "  ${G}${BOLD}✓ SQUID INSTALADO Y CONFIGURADO${N}"
-  hr
-  echo ""
-  echo -e "  ${W}Puertos:${N}       ${Y}${PORT}${N}"
-  echo -e "  ${W}IP servidor:${N}   ${C}${ip}${N}"
-  echo -e "  ${W}Config:${N}        ${C}${conf}${N}"
+  if $final_running; then
+    echo -e "  ${G}${BOLD}✓ SQUID INSTALADO Y CONFIGURADO${N}"
+    hr
+    echo ""
+    echo -e "  ${W}Puertos:${N}       ${Y}${PORT}${N}"
+    echo -e "  ${W}IP servidor:${N}   ${C}${ip}${N}"
+    echo -e "  ${W}Config:${N}        ${C}${conf}${N}"
+    echo -e "  ${W}Servicio:${N}      ${C}${svc}${N}"
+  else
+    echo -e "  ${Y}⚠ Squid instalado pero el servicio no arrancó${N}"
+    hr
+    echo ""
+    echo -e "  ${W}Config escrita en:${N} ${C}${conf}${N}"
+    echo ""
+    echo -e "  ${D}Diagnóstico del servicio:${N}"
+    sep
+    systemctl status "$svc" --no-pager -l 2>/dev/null | tail -n 15 || true
+    sep
+    echo ""
+    echo -e "  ${W}Intenta manualmente:${N} ${C}systemctl restart ${svc}${N}"
+  fi
+
   echo ""
   hr
   pause
@@ -343,7 +437,7 @@ uninstall_squid() {
   echo ""
   sep
 
-  # Paso 1: Detener servicios
+  # Paso 1: Detener servicios (spinner — espera)
   (
     systemctl stop squid >/dev/null 2>&1 || true
     systemctl stop squid3 >/dev/null 2>&1 || true
@@ -353,17 +447,19 @@ uninstall_squid() {
   ) &
   spinner $! "Deteniendo servicios..."
 
-  # Paso 2: Purgar paquetes
-  progress_bar "Eliminando paquetes" 3
-  apt-get purge -y squid squid3 squid-common >/dev/null 2>&1 || true
-  apt-get autoremove -y >/dev/null 2>&1 || true
+  # Paso 2: Purgar paquetes (spinner — espera)
+  (
+    apt-get purge -y squid squid3 squid-common squid-openssl >/dev/null 2>&1 || true
+    apt-get autoremove -y >/dev/null 2>&1 || true
+  ) &
+  spinner $! "Eliminando paquetes..."
 
-  # Paso 3: Eliminar configuración
+  # Paso 3: Eliminar configuración (instantáneo — barra OK)
   progress_bar "Limpiando configuración" 2
   rm -rf /etc/squid /etc/squid3 >/dev/null 2>&1 || true
   rm -f "$HOSTS_DENY" "$REGEX_DENY" >/dev/null 2>&1 || true
 
-  # Paso 4: Limpiar logs y cache
+  # Paso 4: Limpiar logs y cache (spinner — espera)
   (
     rm -rf /var/log/squid /var/log/squid3 >/dev/null 2>&1 || true
     rm -rf /var/spool/squid /var/spool/squid3 >/dev/null 2>&1 || true
@@ -432,9 +528,8 @@ add_port() {
   fi
 
   echo ""
-  progress_bar "Agregando puertos" 2
+  progress_bar "Agregando puertos" 1
 
-  # Insertar después del último http_port
   for p in $new_ports; do
     echo "http_port $p" >> "$conf"
     [[ -f "/usr/sbin/ufw" ]] && ufw allow "$p"/tcp >/dev/null 2>&1 || true
@@ -515,7 +610,7 @@ del_port() {
 
   local target="${MAP[$opc]}"
   echo ""
-  progress_bar "Eliminando puerto ${target}" 2
+  progress_bar "Eliminando puerto ${target}" 1
   sed -i "/^http_port ${target}$/d" "$conf" 2>/dev/null || true
 
   squid_restart
@@ -536,7 +631,6 @@ add_host() {
   echo -e "${W}${BOLD}          BLOQUEAR HOST${N}"
   hr
 
-  # Mostrar hosts actuales
   if [[ -f "$HOSTS_DENY" ]]; then
     echo ""
     echo -e "  ${W}Hosts bloqueados actualmente:${N}"
@@ -573,7 +667,6 @@ add_host() {
   fi
 
   echo "$entry" >> "$HOSTS_DENY"
-  # Limpiar líneas vacías
   grep -v '^$' "$HOSTS_DENY" > /tmp/sn_hosts_tmp 2>/dev/null && mv /tmp/sn_hosts_tmp "$HOSTS_DENY"
 
   echo -e "  ${G}✓${N} ${W}Host ${C}${new_host}${W} bloqueado${N}"
@@ -751,7 +844,6 @@ main_menu() {
   # Si no está instalado, ir directo a instalar
   if ! is_installed; then
     install_squid
-    # Si después de instalar sigue sin config, salir
     is_installed || return
   fi
 
