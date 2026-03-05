@@ -61,7 +61,7 @@ while [[ $# > 0 ]]; do
 done
 
 colorEcho(){
-    echo -e "\033[${1}${@:2}\033[0m" 1>& 2
+    echo -e "\033[${1}${@:2}\033[0m" 1>&2
 }
 
 archAffix(){
@@ -73,10 +73,6 @@ archAffix(){
       *) echo "error: Arquitectura no soportada."; exit 1 ;;
     esac
     return 0
-}
-
-zipRoot() {
-    unzip -lqq "$1" | awk 'NR == 1 {print $4}' | cut -d/ -f1
 }
 
 downloadV2Ray(){
@@ -118,7 +114,7 @@ getVersion(){
         NEW_VER="$(normalizeVersion "$VERSION")"
         return 4
     else
-        VER="$(/usr/bin/$KEY_LOWER/$KEY_LOWER version 2>/dev/null | head -n 1 | cut -d \" \" -f2)"
+        VER="$(/usr/bin/$KEY_LOWER/$KEY_LOWER version 2>/dev/null | head -n 1 | awk '{print $2}')"
         CUR_VER="$(normalizeVersion "$VER")"
         TAG_URL="https://api.github.com/repos/$REPOS/releases/latest"
         NEW_VER="$(normalizeVersion "$(curl ${PROXY} -s "${TAG_URL}" | grep 'tag_name' | cut -d\" -f4)")"
@@ -131,12 +127,12 @@ getVersion(){
 }
 
 installV2Ray(){
-    mkdir -p /etc/$KEY_LOWER /var/log/$KEY_LOWER
-    # En V5+ solo extraemos el binario principal y los archivos .dat
-    unzip -oj "$1" "$2${KEY_LOWER}" "$2geoip.dat" "$2geosite.dat" -d /usr/bin/$KEY_LOWER
+    mkdir -p /etc/$KEY_LOWER /var/log/$KEY_LOWER /usr/bin/$KEY_LOWER
+    # Extracción correcta de binario y .dat para cualquier release oficial
+    unzip -oj "$1" "$KEY_LOWER" "geoip.dat" "geosite.dat" -d /usr/bin/$KEY_LOWER
     chmod +x /usr/bin/$KEY_LOWER/$KEY_LOWER
 
-    # =========== INICIO MODIFICACIÓN ===============
+    # Config dual VLESS + VMess
     if [ ! -f /etc/$KEY_LOWER/config.json ]; then
         cat > /etc/$KEY_LOWER/config.json <<EOF
 {
@@ -170,7 +166,6 @@ EOF
         colorEcho ${BLUE} "Configuración creada: /etc/$KEY_LOWER/config.json"
         colorEcho ${GREEN} "VLESS y VMess instalados (puerto 443)"
     fi
-    # =========== FIN MODIFICACIÓN ==================
 }
 
 installInitScript(){
@@ -218,11 +213,10 @@ main(){
     fi
 
     downloadV2Ray || return 1
-    local ZIPROOT="$(zipRoot "${ZIPFILE}")"
-    
+    # Ya NO usamos ZIPROOT para releases oficiales
     [[ $(pgrep $KEY_LOWER) ]] && V2RAY_RUNNING=1 && ${SYSTEMCTL_CMD} stop $KEY_LOWER
 
-    installV2Ray "${ZIPFILE}" "${ZIPROOT}"
+    installV2Ray "${ZIPFILE}"
     installInitScript
     
     [[ $V2RAY_RUNNING -eq 1 ]] && ${SYSTEMCTL_CMD} start $KEY_LOWER
