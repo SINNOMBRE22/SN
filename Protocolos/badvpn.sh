@@ -1,121 +1,309 @@
 #!/bin/bash
-set -euo pipefail
-
 # =========================================================
-# SinNombre - BADVPN-UDPGW (Compat Rufu / Multi-Script)
+# SinNombre v2.0 - BADVPN-UDPGW
 # Archivo: SN/Protocolos/badvpn.sh
 #
-# Basado en: NetVPS/Multi-Script R9/Utils/badvpn/budp.sh
-# - Instala badvpn-udpgw en: /usr/bin/badvpn-udpgw
-# - Crea servicio systemd: /etc/systemd/system/badvpn.service
-# - Servicio: badvpn
+# CAMBIOS v2.0 (2026-03-05):
+# - Usa lib/colores.sh (sin colores duplicados)
+# - Barra de progreso fina (━╸) + spinner profesional
+# - Desinstalación real y completa
+# - Menú simplificado con estado en header
+# - Corrección de errores y validaciones
 # =========================================================
-
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-pause(){ echo ""; read -r -p "Presiona Enter para continuar..."; }
-hr(){ echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
-sep(){ echo -e "${R}------------------------------------------------------------${N}"; }
-require_root(){ [[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo -e "${R}Ejecuta como root.${N}"; exit 1; }; }
+# ── Cargar colores desde lib ────────────────────────────
+LIB_COLORES="$ROOT_DIR/lib/colores.sh"
+if [[ -f "$LIB_COLORES" ]]; then
+  source "$LIB_COLORES"
+else
+  R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
+  C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'; D='\033[2m'; BOLD='\033[1m'
+  hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
+  sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
+  pause(){ echo ""; read -r -p "Presiona Enter para continuar..."; }
+fi
 
+# ── Rutas ───────────────────────────────────────────────
 BIN="/usr/bin/badvpn-udpgw"
 SVC="/etc/systemd/system/badvpn.service"
 LOCK="/root/udp-rufu"
 
-is_on(){
+# =========================================================
+#  ANIMACIONES
+# =========================================================
+
+progress_bar() {
+  local msg="$1"
+  local duration="${2:-3}"
+  local width=20
+  tput civis # Ocultar cursor
+
+  for ((i = 0; i <= width; i++)); do
+    local pct=$(( i * 100 / width ))
+    # Definir color según progreso
+    local bar_color="$R"
+    (( pct > 33 )) && bar_color="$Y"
+    (( pct > 66 )) && bar_color="$G"
+
+    # CONSEJO: Usamos \r al inicio y NO usamos \n al final
+    printf "\r  ${C}•${N} ${W}%-20s${N} ${bar_color}" "$msg"
+    
+    for ((j = 0; j < i; j++)); do printf "━"; done
+    (( i < width )) && printf "╸" || printf "━"
+
+    printf "${D}"
+    for ((j = i + 1; j < width; j++)); do printf "━"; done
+    
+    # El truco: %3d%% para mantener el ancho constante
+    printf "${N} ${W}%3d%%${N}" "$pct"
+
+    # Importante: sleep con valores pequeños para suavidad
+    sleep "$(echo "scale=4; $duration / $width" | bc -l 2>/dev/null || echo "0.1")"
+  done
+
+  echo -e "  ${G}✓${N}" # Nueva línea solo al terminar
+  tput cnorm # Mostrar cursor
+}
+
+spinner() {
+  local pid="$1"
+  local msg="${2:-Procesando...}"
+  local frames=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+  local i=0
+  tput civis
+
+  while kill -0 "$pid" 2>/dev/null; do
+    # \e[K borra rastro de texto anterior
+    printf "\r  ${C}${frames[$i]}${N} ${W}%s${N}\e[K" "$msg"
+    i=$(( (i + 1) % ${#frames[@]} ))
+    sleep 0.1
+  done
+
+  wait "$pid"
+  local res=$?
+  
+  if [[ $res -eq 0 ]]; then
+    printf "\r  ${G}✓${N} ${W}%-50s${N}\e[K\n" "$msg"
+  else
+    printf "\r  ${R}✗${N} ${W}%-50s${N}\e[K\n" "$msg"
+  fi
+  tput cnorm
+}
+
+# =========================================================
+#  UTILIDADES
+# =========================================================
+
+require_root() {
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    hr
+    echo -e "  ${R}✗${N} ${W}Ejecuta como root${N}"
+    hr
+    exit 1
+  fi
+}
+
+is_installed() {
+  [[ -x "$BIN" ]]
+}
+
+is_on() {
   systemctl is-active --quiet badvpn 2>/dev/null && return 0
   pgrep -x badvpn-udpgw >/dev/null 2>&1 && return 0
   return 1
 }
-status_badge(){ is_on && echo -e "${G}[ON ]${N}" || echo -e "${R}[OFF]${N}"; }
 
-install_deps(){
-  apt-get update -y >/dev/null 2>&1 || true
-  apt-get install -y wget unzip cmake make gcc g++ build-essential lsof >/dev/null 2>&1
+status_badge() {
+  if is_on; then
+    echo -e "${G}${BOLD}● ON${N}"
+  else
+    echo -e "${R}${BOLD}● OFF${N}"
+  fi
 }
 
-install_badvpn(){
-  clear; hr
-  echo -e "${W}         INSTALAR BADVPN-UDPGW${N}"
+get_listen_info() {
+  if [[ -f "$SVC" ]]; then
+    grep -oP 'listen-addr \K[^\s]+' "$SVC" 2>/dev/null || echo "No configurado"
+  else
+    echo "No configurado"
+  fi
+}
+
+# =========================================================
+#  INSTALAR BADVPN
+# =========================================================
+install_badvpn() {
+  clear
+  hr
+  echo -e "${W}${BOLD}          INSTALAR BADVPN-UDPGW${N}"
   hr
 
-  install_deps
+  if is_installed; then
+    echo ""
+    echo -e "  ${Y}⚠${N} ${W}Ya está instalado:${N} ${C}${BIN}${N}"
+    pause
+    return
+  fi
 
-  # estilo Rufu: primera vez limpia rastros viejos
+  echo ""
+
+  # Paso 1: Dependencias
+  (
+    apt-get update -y >/dev/null 2>&1 || true
+    apt-get install -y wget unzip cmake make gcc g++ build-essential lsof >/dev/null 2>&1 || true
+  ) &
+  spinner $! "Instalando dependencias de compilación..."
+
+  # Limpiar rastros viejos
   if [[ ! -e "$LOCK" ]]; then
     rm -f /usr/bin/badvpn-udpgw /bin/badvpn-udpgw >/dev/null 2>&1 || true
     touch "$LOCK" >/dev/null 2>&1 || true
   fi
 
-  if [[ -x "$BIN" ]]; then
-    echo -e "${Y}Ya está instalado:${N} ${C}${BIN}${N}"
+  # Paso 2: Descargar
+  cd /root
+  rm -rf /root/badvpn-master /root/badvpn-master.zip >/dev/null 2>&1 || true
+
+  (
+    wget -qO /root/badvpn-master.zip \
+      "https://github.com/NetVPS/Multi-Script/raw/main/R9/Utils/badvpn/badvpn-master.zip" 2>/dev/null
+  ) &
+  spinner $! "Descargando badvpn-master.zip..."
+
+  if [[ ! -f /root/badvpn-master.zip ]]; then
+    echo -e "  ${R}✗${N} ${W}Fallo la descarga${N}"
     pause
     return
   fi
 
-  cd /root
-  rm -rf /root/badvpn-master /root/badvpn-master.zip >/dev/null 2>&1 || true
+  # Paso 3: Descomprimir
+  (
+    unzip -oq /root/badvpn-master.zip -d /root 2>/dev/null
+  ) &
+  spinner $! "Descomprimiendo..."
 
-  sep
-  echo -e "${W}Descargando badvpn-master.zip...${N}"
-  sep
-
-  # Puedes cambiar la URL si quieres usar TU repo o una fija
-  wget -qO /root/badvpn-master.zip "https://github.com/NetVPS/Multi-Script/raw/main/R9/Utils/badvpn/badvpn-master.zip" || {
-    echo -e "${R}Fallo descarga del zip.${N}"
+  if [[ ! -d /root/badvpn-master ]]; then
+    echo -e "  ${R}✗${N} ${W}Fallo al descomprimir${N}"
     pause
     return
-  }
+  fi
 
-  sep
-  echo -e "${W}Descomprimiendo...${N}"
-  sep
-  unzip -oq /root/badvpn-master.zip -d /root || {
-    echo -e "${R}Fallo al descomprimir.${N}"
-    pause
-    return
-  }
-
+  # Paso 4: Compilar
   cd /root/badvpn-master
   mkdir -p build
   cd build
 
-  sep
-  echo -e "${W}Compilando e instalando (udpgw)...${N}"
-  sep
+  progress_bar "Ejecutando cmake" 3
   cmake .. -DCMAKE_INSTALL_PREFIX="/" -DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_UDPGW=1 >/dev/null 2>&1 || {
-    echo -e "${R}Fallo cmake.${N}"
+    echo -e "  ${R}✗${N} ${W}Fallo cmake${N}"
     pause
     return
   }
+
+  progress_bar "Compilando (make install)" 5
   make install >/dev/null 2>&1 || {
-    echo -e "${R}Fallo make install.${N}"
+    echo -e "  ${R}✗${N} ${W}Fallo make install${N}"
     pause
     return
   }
 
-  rm -rf /root/badvpn-master /root/badvpn-master.zip >/dev/null 2>&1 || true
+  # Paso 5: Limpiar fuentes
+  (
+    rm -rf /root/badvpn-master /root/badvpn-master.zip >/dev/null 2>&1 || true
+  ) &
+  spinner $! "Limpiando archivos temporales..."
 
-  clear; hr
-  echo -e "${G}BADVPN INSTALADO${N}"
+  echo ""
   hr
-  echo -e "${W}Binario:${N} ${C}${BIN}${N}"
+  echo -e "  ${G}${BOLD}✓ BADVPN INSTALADO${N}"
   hr
+  echo ""
+  echo -e "  ${W}Binario:${N} ${C}${BIN}${N}"
+  echo ""
+  hr
+
+  # Ir directo a configurar
+  echo ""
+  echo -ne "  ${W}¿Configurar e iniciar ahora? (s/n): ${G}"
+  read -r auto_conf
+  echo -ne "${N}"
+  [[ "${auto_conf,,}" == "s" ]] && configure_and_start
+
   pause
 }
 
-write_service(){
-  local ip="$1" port="$2" max_clients="$3" max_conn="$4"
+# =========================================================
+#  CONFIGURAR + INICIAR
+# =========================================================
+configure_and_start() {
+  clear
+  hr
+  echo -e "${W}${BOLD}          CONFIGURAR BADVPN-UDPGW${N}"
+  hr
 
-  cat >"$SVC" <<EOF
+  if ! is_installed; then
+    echo -e "  ${R}✗${N} ${W}No está instalado. Instala primero.${N}"
+    pause
+    return
+  fi
+
+  echo ""
+  echo -e "  ${D}Presiona Enter en cada campo para usar el valor por defecto${N}"
+  echo ""
+
+  # IP
+  echo -ne "  ${W}IP listen [${D}127.0.0.1${W}]: ${G}"
+  read -r ip
+  echo -ne "${N}"
+  ip="${ip:-127.0.0.1}"
+
+  # Puerto
+  local port=""
+  while true; do
+    echo -ne "  ${W}Puerto [${D}7300${W}]: ${G}"
+    read -r port
+    echo -ne "${N}"
+    port="${port:-7300}"
+    if [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )); then
+      break
+    fi
+    echo -e "  ${R}✗${N} ${W}Puerto inválido (1-65535)${N}"
+  done
+
+  # Max clients
+  echo -ne "  ${W}Max clientes [${D}2000${W}]: ${G}"
+  read -r max_clients
+  echo -ne "${N}"
+  max_clients="${max_clients:-2000}"
+  [[ "$max_clients" =~ ^[0-9]+$ ]] || max_clients="2000"
+
+  # Max conexiones
+  echo -ne "  ${W}Max conexiones por cliente [${D}100${W}]: ${G}"
+  read -r max_conn
+  echo -ne "${N}"
+  max_conn="${max_conn:-100}"
+  [[ "$max_conn" =~ ^[0-9]+$ ]] || max_conn="100"
+
+  # Resumen
+  echo ""
+  sep
+  echo -e "  ${W}${BOLD}RESUMEN:${N}"
+  echo -e "    ${W}Escucha:${N}       ${Y}${ip}:${port}${N}"
+  echo -e "    ${W}Max clientes:${N}  ${C}${max_clients}${N}"
+  echo -e "    ${W}Max conn/cli:${N}  ${C}${max_conn}${N}"
+  sep
+  echo -ne "  ${W}¿Aplicar? (s/n): ${G}"
+  read -r confirm
+  echo -ne "${N}"
+  [[ "${confirm,,}" == "s" ]] || { echo -e "  ${Y}Cancelado${N}"; pause; return; }
+
+  echo ""
+
+  # Crear servicio
+  progress_bar "Creando servicio systemd" 2
+  cat > "$SVC" <<EOF
 [Unit]
 Description=BadVPN UDPGW Service
 After=network.target
@@ -131,134 +319,241 @@ RestartSec=3s
 [Install]
 WantedBy=multi-user.target
 EOF
-}
 
-configure_and_start(){
-  clear; hr
-  echo -e "${W}       CONFIGURAR / INICIAR BADVPN${N}"
+  # Iniciar
+  (
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable badvpn >/dev/null 2>&1 || true
+    systemctl restart badvpn >/dev/null 2>&1 || true
+    sleep 1
+  ) &
+  spinner $! "Iniciando servicio badvpn..."
+
+  echo ""
   hr
-
-  [[ -x "$BIN" ]] || { echo -e "${R}No está instalado. Usa opción 1 primero.${N}"; pause; return; }
-
-  local ip port max_clients max_conn
-  read -r -p "IP listen [127.0.0.1]: " ip
-  ip="${ip:-127.0.0.1}"
-
-  read -r -p "Puerto [7300]: " port
-  port="${port:-7300}"
-  [[ "$port" =~ ^[0-9]+$ ]] || port="7300"
-
-  read -r -p "Max clients [2000]: " max_clients
-  max_clients="${max_clients:-2000}"
-  [[ "$max_clients" =~ ^[0-9]+$ ]] || max_clients="2000"
-
-  read -r -p "Max conexiones por cliente [100]: " max_conn
-  max_conn="${max_conn:-100}"
-  [[ "$max_conn" =~ ^[0-9]+$ ]] || max_conn="100"
-
-  write_service "$ip" "$port" "$max_clients" "$max_conn"
-
-  systemctl daemon-reload >/dev/null 2>&1 || true
-  systemctl enable badvpn >/dev/null 2>&1 || true
-  systemctl restart badvpn >/dev/null 2>&1 || true
-  sleep 1
-
-  clear; hr
-  echo -e "${W}Estado:${N} $(status_badge)"
-  echo -e "${W}Servicio:${N} ${Y}badvpn${N}"
-  echo -e "${W}Escuchando:${N} ${Y}${ip}:${port}${N}"
-  hr
-  pause
-}
-
-start_stop(){
-  clear; hr
   if is_on; then
-    echo -e "${Y}Deteniendo BADVPN...${N}"
-    systemctl stop badvpn >/dev/null 2>&1 || true
-  else
-    echo -e "${G}Iniciando BADVPN...${N}"
-    systemctl start badvpn >/dev/null 2>&1 || true
-  fi
-  hr
-  echo -e "${W}Estado:${N} $(status_badge)"
-  hr
-  pause
-}
-
-restart_srv(){
-  clear; hr
-  systemctl restart badvpn >/dev/null 2>&1 || true
-  echo -e "${G}Reiniciado.${N}"
-  hr
-  pause
-}
-
-logs(){
-  clear; hr
-  echo -e "${W}LOGS BADVPN (últimas 200 líneas)${N}"
-  hr
-  journalctl -u badvpn -n 200 --no-pager 2>/dev/null || true
-  hr
-  pause
-}
-
-uninstall_all(){
-  clear; hr
-  echo -e "${R}       DESINSTALAR BADVPN${N}"
-  hr
-  read -r -p "¿Confirmas? (s/n): " yn
-  [[ "${yn,,}" == "s" ]] || return
-
-  systemctl stop badvpn >/dev/null 2>&1 || true
-  systemctl disable badvpn >/dev/null 2>&1 || true
-  rm -f "$SVC" >/dev/null 2>&1 || true
-  systemctl daemon-reload >/dev/null 2>&1 || true
-
-  rm -f "$BIN" /bin/badvpn-udpgw >/dev/null 2>&1 || true
-
-  echo -e "${G}Desinstalado.${N}"
-  pause
-}
-
-main_menu(){
-  require_root
-  while true; do
-    clear
-    hr
-    echo -e "${W}               BADVPN-UDPGW${N}"
-    hr
-    echo -e "${R}[${N} ${W}BINARIO:${N} $([[ -x "$BIN" ]] && echo -e "${G}OK${N}" || echo -e "${R}NO${N}")  ${C}${BIN}${N}"
-    echo -e "${R}[${N} ${W}SERVICIO:${N} $(status_badge)  ${Y}badvpn${N}"
-    hr
-
-    echo -e "${R}[${Y}1${R}]${N} ${C}INSTALAR / COMPILAR${N}"
-    echo -e "${R}[${Y}2${R}]${N} ${C}CONFIGURAR + INICIAR${N}"
-    sep
-    echo -e "${R}[${Y}3${R}]${N} ${C}INICIAR / PARAR${N} $(status_badge)"
-    echo -e "${R}[${Y}4${R}]${N} ${C}REINICIAR${N}"
-    echo -e "${R}[${Y}5${R}]${N} ${C}VER LOGS${N}"
-    sep
-    echo -e "${R}[${Y}6${R}]${N} ${C}DESINSTALAR TODO${N}"
-
-    hr
-    echo -e "${R}[${Y}0${R}]${N} ${W}VOLVER${N}"
+    echo -e "  ${G}${BOLD}✓ BADVPN CONFIGURADO Y ACTIVO${N}"
     hr
     echo ""
-    echo -ne "${W}Ingresa una opcion: ${G}"
+    echo -e "  ${W}Escucha:${N}   ${Y}${ip}:${port}${N}"
+    echo -e "  ${W}Estado:${N}    $(status_badge)"
+  else
+    echo -e "  ${R}✗ Fallo al iniciar badvpn${N}"
+    hr
+    echo ""
+    echo -e "  ${D}Revisa los logs con la opción del menú${N}"
+  fi
+  echo ""
+  hr
+  pause
+}
+
+# =========================================================
+#  INICIAR / PARAR
+# =========================================================
+start_stop() {
+  clear
+  hr
+
+  if is_on; then
+    (
+      systemctl stop badvpn >/dev/null 2>&1 || true
+      sleep 0.5
+    ) &
+    spinner $! "Deteniendo badvpn..."
+    echo -e "  ${Y}■ Servicio detenido${N}"
+  else
+    (
+      systemctl start badvpn >/dev/null 2>&1 || true
+      sleep 1
+    ) &
+    spinner $! "Iniciando badvpn..."
+
+    if is_on; then
+      echo -e "  ${G}${BOLD}✓ Servicio iniciado${N}"
+    else
+      echo -e "  ${R}✗ Fallo al iniciar${N}"
+    fi
+  fi
+
+  hr
+  pause
+}
+
+# =========================================================
+#  REINICIAR
+# =========================================================
+restart_srv() {
+  clear
+  hr
+
+  (
+    systemctl restart badvpn >/dev/null 2>&1 || true
+    sleep 1
+  ) &
+  spinner $! "Reiniciando badvpn..."
+
+  if is_on; then
+    echo -e "  ${G}${BOLD}✓ Servicio reiniciado${N}"
+  else
+    echo -e "  ${R}✗ Fallo al reiniciar${N}"
+  fi
+
+  hr
+  pause
+}
+
+# =========================================================
+#  VER LOGS
+# =========================================================
+show_logs() {
+  clear
+  hr
+  echo -e "  ${W}${BOLD}LOGS BADVPN${N} ${D}(últimas 30 líneas)${N}"
+  hr
+  echo ""
+
+  local log_output
+  log_output="$(journalctl -u badvpn -n 30 --no-pager 2>/dev/null || true)"
+
+  if [[ -n "$log_output" ]]; then
+    echo -e "${D}${log_output}${N}"
+  else
+    echo -e "  ${Y}⚠${N} ${W}No hay logs disponibles${N}"
+  fi
+
+  echo ""
+  hr
+  pause
+}
+
+# =========================================================
+#  DESINSTALAR
+# =========================================================
+uninstall_all() {
+  clear
+  hr
+  echo -e "${W}${BOLD}          DESINSTALAR BADVPN${N}"
+  hr
+
+  if ! is_installed && [[ ! -f "$SVC" ]]; then
+    echo -e "  ${Y}⚠${N} ${W}BadVPN no está instalado${N}"
+    pause
+    return
+  fi
+
+  echo ""
+  echo -e "  ${Y}⚠ Se eliminará completamente:${N}"
+  echo -e "    ${W}•${N} Binario ${C}${BIN}${N}"
+  echo -e "    ${W}•${N} Servicio systemd ${C}badvpn${N}"
+  echo -e "    ${W}•${N} Archivo lock"
+  echo ""
+  echo -ne "  ${W}¿Estás seguro? (s/n): ${G}"
+  read -r yn
+  echo -ne "${N}"
+  [[ "${yn,,}" == "s" ]] || { echo -e "  ${Y}Cancelado${N}"; pause; return; }
+
+  echo ""
+  sep
+
+  (
+    systemctl stop badvpn >/dev/null 2>&1 || true
+    systemctl disable badvpn >/dev/null 2>&1 || true
+    sleep 0.5
+  ) &
+  spinner $! "Deteniendo servicio..."
+
+  progress_bar "Eliminando archivos" 2
+  rm -f "$SVC" >/dev/null 2>&1 || true
+  rm -f "$BIN" /bin/badvpn-udpgw >/dev/null 2>&1 || true
+  rm -f "$LOCK" >/dev/null 2>&1 || true
+
+  (
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    sleep 0.3
+  ) &
+  spinner $! "Recargando systemd..."
+
+  echo ""
+  hr
+  echo -e "  ${G}${BOLD}✓ BADVPN DESINSTALADO COMPLETAMENTE${N}"
+  hr
+  echo ""
+  sleep 1
+  pause
+}
+
+# =========================================================
+#  MENÚ PRINCIPAL
+# =========================================================
+main_menu() {
+  require_root
+
+  while true; do
+    clear
+
+    local bin_st listen_info
+    if is_installed; then
+      bin_st="${G}Instalado${N}"
+    else
+      bin_st="${R}No instalado${N}"
+    fi
+    listen_info="$(get_listen_info)"
+
+    hr
+    echo -e "${W}${BOLD}                BADVPN-UDPGW${N}"
+    hr
+    echo -e "  ${W}BINARIO:${N}    ${bin_st}  ${D}${BIN}${N}"
+    echo -e "  ${W}ESTADO:${N}     $(status_badge)"
+    echo -e "  ${W}ESCUCHA:${N}    ${Y}${listen_info}${N}"
+    hr
+
+    if ! is_installed; then
+      echo ""
+      echo -e "  ${G}[${W}1${G}]${N}  ${C}Instalar BadVPN${N}"
+      hr
+      echo -e "  ${G}[${W}0${G}]${N}  ${W}Volver${N}"
+      hr
+      echo ""
+      echo -ne "  ${W}Opción: ${G}"
+      read -r op
+      echo -ne "${N}"
+
+      case "${op:-}" in
+        1) install_badvpn ;;
+        0) break ;;
+        *) echo -e "  ${R}Opción inválida${N}"; sleep 1 ;;
+      esac
+      continue
+    fi
+
+    echo ""
+    echo -e "  ${G}[${W}1${G}]${N}  ${C}Configurar + Iniciar${N}"
+    echo -e "  ${G}[${W}2${G}]${N}  ${C}Iniciar / Parar${N}  $(status_badge)"
+    echo -e "  ${G}[${W}3${G}]${N}  ${C}Reiniciar${N}"
+    sep
+    echo -e "  ${G}[${W}4${G}]${N}  ${C}Ver logs${N}"
+    echo -e "  ${G}[${W}5${G}]${N}  ${R}Desinstalar${N}"
+    hr
+    echo -e "  ${G}[${W}0${G}]${N}  ${W}Volver${N}"
+    hr
+    echo ""
+    echo -ne "  ${W}Opción: ${G}"
     read -r op
+    echo -ne "${N}"
 
     case "${op:-}" in
-      1) install_badvpn ;;
-      2) configure_and_start ;;
-      3) start_stop ;;
-      4) restart_srv ;;
-      5) logs ;;
-      6) uninstall_all ;;
-      0)  break ;;
-      *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
+      1) configure_and_start ;;
+      2) start_stop ;;
+      3) restart_srv ;;
+      4) show_logs ;;
+      5) uninstall_all; is_installed || continue ;;
+      0) break ;;
+      *) echo -e "  ${R}Opción inválida${N}"; sleep 1 ;;
     esac
   done
 }
+
+trap 'echo -ne "${N}"; tput cnorm 2>/dev/null; exit 0' SIGINT SIGTERM
 
 main_menu
