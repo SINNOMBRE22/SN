@@ -98,16 +98,16 @@ main_menu_single() {
     hr
 
     # Lista única, con un espacio entre cada protocolo
-    printf "${R}[${Y}1${R}]${N}  ${C}AJUSTES SSH${N}        %s\n\n"      "$ssh_st"
-    printf "${R}[${Y}2${R}]${N}  ${C}DROPBEAR${N}           %s\n\n"      "$dropbear_st"
-    printf "${R}[${Y}3${R}]${N}  ${C}STUNNEL (SSL)${N}      %s\n\n"      "$stunnel_st"
-    printf "${R}[${Y}4${R}]${N}  ${C}SOCKS (PYTHON)${N}     %s\n\n"      "$socks_st"
-    printf "${R}[${Y}5${R}]${N}  ${C}SQUID PROXY${N}        %s\n\n"      "$squid_st"
-    printf "${R}[${Y}6${R}]${N}  ${C}BADVPN-UDPGW${N}       %s\n\n"      "$badvpn_st"
-    printf "${R}[${Y}7${R}]${N}  ${C}UDP-CUSTOM${N}         %s\n\n"      "$udp_st"
-    printf "${R}[${Y}8${R}]${N}  ${C}V2RAY${N}              %s\n\n"      "$v2_st"
-    printf "${R}[${Y}9${R}]${N}  ${C}HAPROXY MUX${N}        %s\n\n"      "$haproxy_st"
-    printf "${R}[${Y}10${R}]${N} ${C}SLOWDNS${N}            %s\n\n"      "$slowdns_st"
+    printf "${R}[${Y}1${R}]${N}  ${C}AJUSTES SSH${N}        %s\n"      "$ssh_st"
+    printf "${R}[${Y}2${R}]${N}  ${C}DROPBEAR${N}           %s\n"      "$dropbear_st"
+    printf "${R}[${Y}3${R}]${N}  ${C}STUNNEL (SSL)${N}      %s\n"      "$stunnel_st"
+    printf "${R}[${Y}4${R}]${N}  ${C}SOCKS (PYTHON)${N}     %s\n"      "$socks_st"
+    printf "${R}[${Y}5${R}]${N}  ${C}SQUID PROXY${N}        %s\n"      "$squid_st"
+    printf "${R}[${Y}6${R}]${N}  ${C}BADVPN-UDPGW${N}       %s\n"      "$badvpn_st"
+    printf "${R}[${Y}7${R}]${N}  ${C}UDP-CUSTOM${N}         %s\n"      "$udp_st"
+    printf "${R}[${Y}8${R}]${N}  ${C}V2RAY${N}              %s\n"      "$v2_st"
+    printf "${R}[${Y}9${R}]${N}  ${C}HAPROXY MUX${N}        %s\n"      "$haproxy_st"
+    printf "${R}[${Y}10${R}]${N} ${C}SLOWDNS${N}            %s\n"      "$slowdns_st"
     sep
     printf "${R}[${Y}0${R}]${N}  ${C}VOLVER${N}\n"
     hr

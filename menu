@@ -253,7 +253,7 @@ show_services_status() {
 # ── Info del sistema ────────────────────────────────────
 show_custom_banner() {
   if command -v toilet &>/dev/null; then
-    echo -e "\e[31m$(toilet -f slant -F metal "SN-MANAGER")\e[0m"
+    echo -e "\e[31m$(toilet -f slant -F metal "KAIRO")\e[0m"
   fi
 }
 
