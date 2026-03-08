@@ -957,6 +957,7 @@ eliminar_all() {
 # =========================================================
 # MONITOR DE USUARIOS CONECTADOS
 # =========================================================
+# =========================================================
 UDP_LOG_FILE="/var/log/udp-custom.log"
 
 extract_users_from_json_log() {
@@ -1037,25 +1038,32 @@ sshmonitor() {
 
   for i in $(echo "$cat_users" | awk -F: '{print $1}'); do
     local user="$i"
-    local s2ssh sshd_count drop ovp udp_proc conex timerr estado_txt estado_color
-
+    
+    # --- REPARACIÓN INICIA AQUÍ ---
+        # Captura de s2ssh protegida
     s2ssh=$(echo "$cat_users" | grep -w "$i" | awk -F: '{print $5}' | cut -d',' -f1)
-    [[ -z "$s2ssh" ]] && s2ssh=0
+    [[ -z "$s2ssh" || ! "$s2ssh" =~ ^[0-9]+$ ]] && s2ssh=0
 
-    sshd_count=$(ps -u "$user" 2>/dev/null | grep -c sshd || echo 0)
-    drop=$(ps aux | grep -i dropbear | grep -w "$user" | grep -v grep | wc -l)
+    # SSH y Dropbear (usamos wc -l para garantizar un solo número limpio)
+    sshd_count=$(ps -u "$user" 2>/dev/null | grep -w sshd | wc -l)
+    drop=$(ps aux 2>/dev/null | grep -i dropbear | grep -w "$user" | grep -v grep | wc -l)
 
+    # OpenVPN garantizado a 1 sola línea
     ovp=0
-    [[ -e /etc/openvpn/openvpn-status.log ]] && ovp=$(grep -c ",$user," /etc/openvpn/openvpn-status.log 2>/dev/null || echo 0)
+    [[ -f /etc/openvpn/openvpn-status.log ]] && ovp=$(grep -w ",$user," /etc/openvpn/openvpn-status.log 2>/dev/null | wc -l)
 
-    udp_proc=0
+    # UDP protegido
     if [[ -n "${UDP_USER_COUNT["$user"]:-}" ]]; then
       udp_proc=${UDP_USER_COUNT["$user"]}
     else
       udp_proc=$(ps -u "$user" 2>/dev/null | grep -E "udp-custom|badvpn" | grep -v grep | wc -l)
     fi
+    [[ -z "$udp_proc" ]] && udp_proc=0
 
-    conex=$((sshd_count + drop + ovp + udp_proc))
+    # Suma completamente blindada (ahora sí, sin saltos de línea)
+    conex=$(( ${sshd_count:-0} + ${drop:-0} + ${ovp:-0} + ${udp_proc:-0} ))
+
+    # --- REPARACIÓN TERMINA AQUÍ ---
 
     if [[ $conex -gt 0 ]]; then
       local pid
@@ -1088,15 +1096,30 @@ sshmonitor() {
 
     if ((${#extra_users[@]} > 0)); then
       echo -e "${R}────────────────────────── / / / ──────────────────────────${N}"
-      echo -e "${W}Usuarios UDP detectados (sin cuenta sistema):${N}"
+      echo -e "${W} Usuarios UDP Custom :${N}"
       for e in "${extra_users[@]}"; do
         local eu="${e%%|*}"
-        local eips="${e#*|}"
-        echo -e "  ${Y}${eu}${N}  IPs:${G}${eips}${N}  Conexiones:${C}${UDP_USER_COUNT[$eu]:-0}${N}"
+        
+        # Filtro para ignorar basura del log y mantener la tabla limpia
+        [[ "$eu" == "rejected" || "$eu" == "null" || "$eu" == "client" ]] && continue
+        
+        local udp_c=${UDP_USER_COUNT[$eu]:-0}
+        local estado_txt="ONLINE"
+        local estado_color=$G
+        
+        if [[ $udp_c -eq 0 ]]; then
+          estado_txt="OFFLINE"
+          estado_color=$R
+        fi
+
+        # Usamos el mismo formato de tabla. Como no son usuarios del sistema, ponemos límite 0
+        printf " ${Y}%-14s${N} ${estado_color}%-12s${N} ${G}%-18s${N} ${Y}%-10s${N}\n" \
+          "$eu" "$estado_txt" "$udp_c (0/$udp_c)" "00:00:00"
       done
     fi
   fi
 
+  # Mostramos únicamente el estado del servicio UDP Custom (sin los usuarios fantasmas)
   if systemctl list-units --type=service --state=running 2>/dev/null | grep -q "udp-custom"; then
     local udp_total
     udp_total=$(ss -u -a 2>/dev/null | grep -cE ":${UDP_PORT}\b" || echo 0)
@@ -1104,7 +1127,8 @@ sshmonitor() {
     echo -e "${W} UDP CUSTOM ACTIVO | PUERTO: ${Y}$UDP_PORT${W} | CONEXIONES TOTALES: ${G}$udp_total${N}"
   fi
 
-  msg -bar
+  # Remate final
+  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
   echo -e "${Y}            ►► Presione ENTER para continuar ◄◄${N}"
   read
 }
