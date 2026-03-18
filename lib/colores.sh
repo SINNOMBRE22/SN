@@ -21,11 +21,6 @@ D='\033[2m'
 hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
 sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
 
-# Exportar para que los scripts en /tmp/ las vean
-export -f hr
-export -f sep
-
-
 # Mensajes rápidos (estilo instalador)
 step() { printf " ${C}•${N} ${W}%s${N} " "$1"; }
 ok()   { echo -e "${G}[OK]${N}"; }
@@ -147,3 +142,8 @@ run_proto() {
     pause
   fi
 }
+
+# ... tus funciones hr() y sep() ...
+
+export -f hr
+export -f sep
