@@ -1,6 +1,7 @@
 #!/bin/bash
 # =========================================================
-# SN Plus - LIBRERÍA CENTRAL DE INTERFAZ (V2.1)
+# SN Plus - LIBRERÍA CENTRAL DE INTERFAZ (V2.2)
+# Fusionada con funciones completas (title, print_center, etc.)
 # =========================================================
 
 CONFIG_TEMA="/root/SN/lib/tema.conf"
@@ -17,12 +18,12 @@ else
     L_COLOR='\033[38;2;0;255;255m' # Cian por defecto
 fi
 
-# --- 3. FUNCIONES DE DIBUJO ---
+# --- 3. FUNCIONES DE DIBUJO (usando L_COLOR del tema) ---
 hr()  { echo -e "${L_COLOR}══════════════════════════ / / / ══════════════════════════${N}"; }
 sep() { echo -e "${L_COLOR}──────────────────────────────────────────────────────────${N}"; }
 clear_screen() { clear; }
 
-# --- 4. UTILIDADES ---
+# --- 4. UTILIDADES BÁSICAS ---
 step() { printf " ${C}•${N} ${W}%s${N} " "$1"; }
 ok()   { echo -e "${G}[OK]${N}"; }
 fail() { echo -e "${R}[FAIL]${N}"; }
@@ -37,16 +38,91 @@ require_root() {
   fi
 }
 
-# --- 5. FUNCIÓN MSG (Etiquetas) ---
+# --- 5. FUNCIÓN MSG COMPLETA (estilo v2ray/Rufu) ---
 msg() {
   case "$1" in
     -bar)   hr ;;
     -bar3)  sep ;;
-    -azu)   shift; echo -e "${C}$*${N}" ;;
+    -nazu)  shift; echo -ne "${C}$*${N} " ;;
+    -blu)   shift; echo -e "${C}$*${N}" ;;
     -verd)  shift; echo -e "${G}$*${N}" ;;
-    -verm)  shift; echo -e "${R}$*${N}" ;;
+    -verm|-verm2) shift; echo -e "${R}$*${N}" ;;
     -ama)   shift; echo -e "${Y}$*${N}" ;;
+    -azu)   shift; echo -e "${C}$*${N}" ;;
+    -ne)    shift; echo -ne "$*" ;;
     *)      echo -e "$*" ;;
   esac
 }
 
+# --- 6. FUNCIÓN PRINT_CENTER (con color, sin centrado real por compatibilidad) ---
+print_center() {
+  case "$1" in
+    -blu)   shift; echo -e "${C}$*${N}" ;;
+    -ama)   shift; echo -e "${Y}$*${N}" ;;
+    -verd)  shift; echo -e "${G}$*${N}" ;;
+    -verm2) shift; echo -e "${R}$*${N}" ;;
+    *)      echo -e "$*" ;;
+  esac
+}
+
+# --- 7. FUNCIÓN TITLE (título con líneas) ---
+title() {
+  clear_screen
+  hr
+  echo -e "${W}    $* ${N}"
+  hr
+}
+
+# --- 8. FUNCIÓN ENTER (pausa con mensaje) ---
+enter() {
+  echo ""
+  read -r -p " Presione ENTER para continuar"
+}
+
+# --- 9. FUNCIÓN DEL (borra líneas del terminal) ---
+del() {
+  local lines="${1:-1}"
+  for ((i = 0; i < lines; i++)); do
+    tput cuu1 2>/dev/null || true
+    tput el 2>/dev/null || true
+  done
+}
+
+# --- 10. FUNCIONES AUXILIARES PARA MÓDULOS (opcionales) ---
+back_to_main() {
+  local root="${1:-/etc/SN}"
+  [[ -f "${root}/menu" ]] && bash "${root}/menu" || exit 0
+}
+
+run_proto() {
+  local root_dir="$1"
+  local rel="${2-}"
+  local path="${root_dir}/${rel}"
+  if [[ -n "${rel}" && -f "$path" ]]; then
+    bash "$path"
+  else
+    echo ""
+    echo -e "${Y}${BOLD}Módulo no disponible:${N} ${C}${rel:-"(sin ruta)"}${N}"
+    echo -e "${D}Estado:${N} ${Y}En desarrollo...${N}"
+    pause
+  fi
+}
+
+# --- 11. EJECUTAR MÓDULO CON VALIDACIÓN (del original) ---
+run_module() {
+  local base_dir="${2:-$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)}"
+  local rel="$1"
+  local path="$base_dir/$rel"
+
+  if [[ -f "$path" ]]; then
+    chmod +x "$path"
+    bash "$path"
+    clear_screen
+  else
+    echo
+    echo -e "${Y}Módulo no disponible:${N} ${C}${rel}${N}"
+    echo -e "${Y}Ruta esperada:${N} $path"
+    echo -e "${Y}Estado:${N} En desarrollo..."
+    pause
+  fi
+}

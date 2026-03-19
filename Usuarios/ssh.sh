@@ -1,4 +1,4 @@
-[A#!/bin/bash
+#!/bin/bash
 # =========================================================
 # SinNombre v2.0 - Gestión de Usuarios SSH
 # Archivo: Usuarios/ssh.sh
@@ -672,7 +672,7 @@ remove_user() {
   title "REMOVER USUARIO 🗑"
   data_user
   back
-  print_center -ama "Escriba o Seleccione un Usuario"
+#  print_center -ama "Escriba o Seleccione un Usuario"
   msg -bar
 
   local selection=""
