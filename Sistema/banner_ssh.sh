@@ -5,15 +5,16 @@
 # Gestiona Banner Estático y Dinámico (Plantillas Limpias)
 # =========================================================
 
-# Colores de la terminal
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-M='\033[0;35m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ── Cargar colores desde lib ────────────────────────────
+LIB_COLORES="$ROOT_DIR/lib/colores.sh"
+if [[ -f "$LIB_COLORES" ]]; then
+  source "$LIB_COLORES"
+else
+  R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
+  hr() { echo -e "${R}══════════════════════════════════════════════════════════${N}"; }
+fi
 
 # Archivos de configuración
 STATIC_BANNER="/etc/issue.net"
@@ -24,13 +25,13 @@ PAM_DROPBEAR="/etc/pam.d/dropbear"
 
 # Función del Título del Panel (Figlet + Lolcat)
 show_custom_banner() {
-    echo -e "${R}══════════════════════════════════════════════════════════${N}"
+    hr
     if command -v figlet >/dev/null 2>&1 && command -v lolcat >/dev/null 2>&1; then
         figlet -f slant "SN - PLUS" | lolcat
     else
         echo -e "${C}                      SN - PLUS${N}"
     fi
-    echo -e "${R}══════════════════════════════════════════════════════════${N}"
+    hr
 }
 
 # Detectar servicios
@@ -91,24 +92,22 @@ edit_static() {
     clear
     show_custom_banner
     echo -e "${W}          INSTRUCCIONES PARA BANNER ESTÁTICO${N}"
-    echo -e "${R}══════════════════════════════════════════════════════════${N}"
+    hr
     echo -e "${Y}Se abrirá un editor limpio para tu diseño HTML.${N}"
     echo -e "${C}Nota: Este banner NO soporta mostrar los días restantes.${N}"
-    echo -e "${R}══════════════════════════════════════════════════════════${N}"
+    hr
     read -p "Presiona Enter para abrir el editor..."
 
     if [[ ! -s "$STATIC_BANNER" ]]; then
-        # Texto centrado y con colores tipo arcoíris en HTML
         echo -e '<h1 style="text-align:center"><font color="#FF0033">S</font><font color="#FF9900">N</font> <font color="#FFFF00">P</font><font color="#33FF00">L</font><font color="#00FFFF">U</font><font color="#CC00FF">S</font></h1>' > "$STATIC_BANNER"
     fi
-    
+
     nano "$STATIC_BANNER"
     enable_static
-    echo -e "${G}Banner Estático Activado. (Dinámico apagado para evitar conflictos)${N}"
+    echo -e "${G}Banner Estático Activado.${N}"
     read -p "Presiona Enter para continuar..."
 }
 
-# MOTOR OCULTO PARA EL BANNER DINÁMICO
 build_dynamic_engine() {
     cat << 'EOF' > "$DYN_SCRIPT"
 #!/bin/bash
@@ -127,16 +126,10 @@ if [ "$PAM_USER" != "root" ] && [ -n "$PAM_USER" ]; then
             EXP=$(date -d "$EXP_DATE" +"%d/%m/%Y")
         fi
     fi
-
-    # Leemos la plantilla limpia del usuario
     HTML=$(cat /etc/banner_template.txt)
-    
-    # Reemplazamos las etiquetas por los datos reales
     HTML="${HTML//\[USER\]/$PAM_USER}"
     HTML="${HTML//\[EXP\]/$EXP}"
     HTML="${HTML//\[DAYS\]/$DAYS}"
-    
-    # Imprimimos el resultado final
     echo -e "\n$HTML"
 fi
 exit 0
@@ -148,28 +141,26 @@ edit_dynamic() {
     clear
     show_custom_banner
     echo -e "${W}          INSTRUCCIONES PARA BANNER DINÁMICO${N}"
-    echo -e "${R}══════════════════════════════════════════════════════════${N}"
+    hr
     echo -e "${Y}A continuación se abrirá tu plantilla limpia.${N}"
     echo -e "${C}Usa estas etiquetas exactas en tu diseño HTML:${N}"
     echo -e ""
     echo -e "  ${G}[USER]${N}  -> Nombre del cliente"
     echo -e "  ${G}[EXP]${N}   -> Fecha de expiración"
     echo -e "  ${G}[DAYS]${N}  -> Días restantes"
-    echo -e "${R}══════════════════════════════════════════════════════════${N}"
+    hr
     read -p "Presiona Enter para abrir el editor..."
 
     if [[ ! -s "$DYN_TEMPLATE" ]]; then
-        # Texto centrado y con colores tipo arcoíris en HTML
         cat << 'EOF' > "$DYN_TEMPLATE"
 <h1 style="text-align:center"><font color="#FF0033">S</font><font color="#FF9900">N</font> <font color="#FFFF00">P</font><font color="#33FF00">L</font><font color="#00FFFF">U</font><font color="#CC00FF">S</font></h1>
 EOF
     fi
 
     nano "$DYN_TEMPLATE"
-    
     build_dynamic_engine
     enable_dynamic
-    echo -e "${G}Banner Dinámico Activado. (Estático apagado para evitar conflictos)${N}"
+    echo -e "${G}Banner Dinámico Activado.${N}"
     read -p "Presiona Enter para continuar..."
 }
 
@@ -185,20 +176,16 @@ delete_all() {
     clear
     show_custom_banner
     echo -e "${W}                  ELIMINAR BANNERS${N}"
-    echo -e "${R}══════════════════════════════════════════════════════════${N}"
+    hr
     echo -e "${Y}Esto borrará por completo tus diseños y configuraciones.${N}"
     echo -ne "¿Estás seguro de que deseas continuar? (s/n): "
     read -r confirm
-    
     if [[ "$confirm" == "s" || "$confirm" == "S" ]]; then
-        echo -e "\n${C}Limpiando sistema...${N}"
         disable_static
         disable_dynamic
         rm -f "$STATIC_BANNER" "$DYN_TEMPLATE" "$DYN_SCRIPT"
         restart_services
         echo -e "${G}¡Banners eliminados correctamente!${N}"
-    else
-        echo -e "\n${Y}Operación cancelada.${N}"
     fi
     read -p "Presiona Enter para continuar..."
 }
@@ -209,7 +196,6 @@ delete_all() {
 show_menu() {
     estado_estatico="${R}[OFF]${N}"
     estado_dinamico="${R}[OFF]${N}"
-    
     if grep -q "^Banner /etc/issue.net" /etc/ssh/sshd_config 2>/dev/null; then estado_estatico="${G}[ON]${N}"; fi
     if grep -q "banner_sinnombre.sh" $PAM_SSH 2>/dev/null; then estado_dinamico="${G}[ON]${N}"; fi
 
@@ -219,9 +205,9 @@ show_menu() {
     echo -e "${R}[${Y}2${R}]${N}  ${C}BANNER DINÁMICO${N}      $estado_dinamico  (CheckUser)"
     echo -e "${R}[${Y}3${R}]${N}  ${C}DESACTIVAR AMBOS${N}     (Apagar banners)"
     echo -e "${R}[${Y}4${R}]${N}  ${C}ELIMINAR BANNERS${N}     (Borrar archivos)"
-    echo -e "${R}══════════════════════════════════════════════════════════${N}"
+    hr
     echo -e "${R}[${Y}0${R}]${N}  ${C}VOLVER AL MENÚ PRINCIPAL${N}"
-    echo -e "${R}══════════════════════════════════════════════════════════${N}"
+    hr
     echo -ne "${W}Selecciona una opción: ${G}"
 }
 
@@ -240,7 +226,6 @@ main_menu() {
     done
 }
 
-# Verificar root
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     echo -e "${R}Ejecuta como root.${N}"
     exit 1

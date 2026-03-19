@@ -6,18 +6,23 @@ set -euo pipefail
 # Adaptación visual: @SIN_NOMBRE22
 # =========================================================
 
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
-BOLD='\033[1m'
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
+# ── Cargar colores desde lib ────────────────────────────
+LIB_COLORES="$ROOT_DIR/lib/colores.sh"
+if [[ -f "$LIB_COLORES" ]]; then
+  source "$LIB_COLORES"
+else
+  # Fallback: colores básicos si no encuentra la librería
+  R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'
+  W='\033[1;37m'; N='\033[0m'; BOLD='\033[1m'
+  hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
+  sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
+  pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
+  clear_screen() { clear; }
+fi
+
+# ── Funciones de Lógica ──────────────────────────────────
 
 run_proto() {
   local rel="${1-}"
@@ -46,16 +51,11 @@ check_slowdns_status() {
      || is_active_systemd sn-dnstt-client.service || is_active_systemd sn-dnstt-server.service; then
     echo "true"; return 0
   fi
-  if pgrep -f 'dnstt|slowdns|dnstt-client|dnstt-server' >/dev/null 2>&1; then
-    echo "true"; return 0
-  fi
-  echo "false"
+  pgrep -f 'dnstt|slowdns|dnstt-client|dnstt-server' >/dev/null 2>&1 && echo "true" || echo "false"
 }
 
 py_socks_units() {
-  systemctl list-units --type=service --all 2>/dev/null \
-    | awk '{print $1}' \
-    | grep -E '^python\.[0-9]+\.service$' || true
+  systemctl list-units --type=service --all 2>/dev/null | awk '{print $1}' | grep -E '^python\.[0-9]+\.service$' || true
 }
 
 py_socks_is_on() {
@@ -71,27 +71,19 @@ check_socks_status()     { py_socks_is_on && echo "true" || echo "false"; }
 check_v2ray_status()     { ( is_active_systemd v2ray || is_active_systemd xray ) && echo "true" || echo "false"; }
 check_udp_custom_status(){ pgrep -f 'udp-custom|udpcustom|udp_custom' >/dev/null 2>&1 && echo "true" || echo "false"; }
 check_badvpn_status()    { pgrep -x badvpn-udpgw >/dev/null 2>&1 && echo "true" || echo "false"; }
+check_ssl_status()       { if ls /etc/SN/cert/*.crt >/dev/null 2>&1; then echo "true"; else echo "false"; fi; }
+check_autostart_status() { if grep -q "# --- SN AUTOSTART ---" ~/.bashrc 2>/dev/null; then echo "true"; else echo "false"; fi; }
 
-# Detectar Certificado SSL
-check_ssl_status() {
-  if ls /etc/SN/cert/*.crt >/dev/null 2>&1; then echo "true"; else echo "false"; fi
-}
-
-# Detectar Auto Inicio (Busca el marcador exacto en el .bashrc)
-check_autostart_status() {
-  if grep -q "# --- SN AUTOSTART ---" ~/.bashrc 2>/dev/null; then echo "true"; else echo "false"; fi
-}
-
-BOX_LINE="══════════════════════════ / / / ══════════════════════════"
-hr() { echo -e "${R}${BOX_LINE}${N}"; }
-sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
+# =========================================================
+#  MENÚ PRINCIPAL
+# =========================================================
 
 main_menu_single() {
   while true; do
     clear
 
+    # Captura de estados
     local ssh_st dropbear_st stunnel_st squid_st socks_st v2_st udp_st badvpn_st haproxy_st slowdns_st ssl_st autostart_st
-
     ssh_st="$(status_badge "$(check_ssh_status)")"
     dropbear_st="$(status_badge "$(check_dropbear_status)")"
     stunnel_st="$(status_badge "$(check_stunnel_status)")"
@@ -119,12 +111,11 @@ main_menu_single() {
     printf " ${R}[${Y}08${R}] ${R}» ${C}%-20s${N} %s\n" "V2RAY" "$v2_st"
     printf " ${R}[${Y}09${R}] ${R}» ${C}%-20s${N} %s\n" "HAPROXY MUX" "$haproxy_st"
     printf " ${R}[${Y}10${R}] ${R}» ${C}%-20s${N} %s\n" "SLOWDNS" "$slowdns_st"
-    
+
     sep
     printf " ${R}[${Y}42${R}] ${R}» ${C}%-20s${N} %s\n" "GESTIÓN CERT SSL" "$ssl_st"
     sep
-    
-    # Opción Salir (Izquierda) y Auto Iniciar (Derecha)
+
     echo -e " ${R}[${Y}00${R}] ${R}« VOLVER${N}             ${R}[${Y}100${R}] ${W}AUTO INICIAR${N} ${autostart_st}"
     hr
 
@@ -147,15 +138,14 @@ main_menu_single() {
       10)   run_proto "Protocolos/slowdns.sh" ;;
       42)   run_proto "Herramientas/ssl.sh" ;;
       100)  
-          # Lógica pura: Inyecta o borra el bloque en el .bashrc
           if grep -q "# --- SN AUTOSTART ---" ~/.bashrc 2>/dev/null; then
-              # Está activado: Borra el bloque exacto
               sed -i '/# --- SN AUTOSTART ---/,/# --- END SN ---/d' ~/.bashrc
           else
-              # Está apagado: Escribe la validación de root / sudo sn
-              echo '# --- SN AUTOSTART ---' >> ~/.bashrc
-              echo 'if [ "$EUID" -ne 0 ]; then sudo sn; else sn; fi' >> ~/.bashrc
-              echo '# --- END SN ---' >> ~/.bashrc
+              {
+                echo '# --- SN AUTOSTART ---'
+                echo 'if [ "$EUID" -ne 0 ]; then sudo sn; else sn; fi'
+                echo '# --- END SN ---'
+              } >> ~/.bashrc
           fi
           ;;
       0|00) break ;;

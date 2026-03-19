@@ -6,12 +6,27 @@
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# ── Colores ──────────────────────────────────────────────
-R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
-C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'; D='\033[2m'; BOLD='\033[1m'
-hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
-sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
-pause(){ echo ""; read -r -p "Presiona Enter para continuar..."; }
+# ── Cargar colores desde lib ────────────────────────────
+LIB_COLORES="$ROOT_DIR/lib/colores.sh"
+if [[ -f "$LIB_COLORES" ]]; then
+  source "$LIB_COLORES"
+else
+  # Fallback: definir colores inline si no existe la lib
+  R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
+  M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
+  BOLD='\033[1m'
+  hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
+  sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
+  step() { printf " ${C}•${N} ${W}%s${N} " "$1"; }
+  ok()   { echo -e "${G}[OK]${N}"; }
+  fail() { echo -e "${R}[FAIL]${N}"; }
+  pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
+  clear_screen() { clear; }
+fi
+
+# ── Colores Locales para el Script ──────────────────────
+# Se mantienen para no romper las impresiones internas del menú
+N='\033[0m'; D='\033[2m'
 
 LOGFILE="/var/log/v2ray_manager.log"
 V2RAY_CONFIG="/etc/v2ray/config.json"
@@ -297,7 +312,7 @@ new_user() {
 # =========================================================
 
 del_user() {
-  clear
+  clear_screen
   hr
   echo -e "${W}${BOLD}      ELIMINAR USUARIO VMESS${N}"
   hr
@@ -349,7 +364,7 @@ del_user() {
 # =========================================================
 
 view_user() {
-  clear
+  clear_screen
   hr
   echo -e "${W}${BOLD}      VER DATOS / LINK VMESS${N}"
   hr
@@ -375,7 +390,7 @@ view_user() {
     [[ "$opc" =~ $numero ]] && (( opc < count )) && break
     echo -e "  ${R}✗ Inválido${N}"
   done
-  clear
+  clear_screen
   hr
   show_vmess_link "$opc"
   hr
@@ -387,7 +402,7 @@ view_user() {
 # =========================================================
 
 renew_user() {
-  clear
+  clear_screen
   hr
   echo -e "${W}${BOLD}      RENOVAR USUARIO VMESS${N}"
   hr
@@ -449,7 +464,7 @@ renew_user() {
 # =========================================================
 
 block_user() {
-  clear
+  clear_screen
   hr
   echo -e "${W}${BOLD}      BLOQUEAR USUARIO VMESS${N}"
   hr
@@ -495,7 +510,7 @@ block_user() {
 # =========================================================
 
 backup_users() {
-  clear
+  clear_screen
   hr
   echo -e "${W}${BOLD}      COPIAS DE SEGURIDAD VMESS${N}"
   hr
@@ -545,7 +560,7 @@ backup_users() {
 main_menu() {
   check_deps
   while true; do
-    clear
+    clear_screen
     local port_v2 vmess_c
     port_v2="$(get_port)"
     vmess_c="$(get_vmess_count)"
@@ -579,7 +594,7 @@ main_menu() {
       4) renew_user ;;
       5) block_user ;;
       6) backup_users ;;
-      7) clear; hr; echo -e "${W}${BOLD}          TODOS LOS USUARIOS VMESS${N}"; hr; echo ""; list_vmess_users; echo ""; hr; pause ;;
+      7) clear_screen; hr; echo -e "${W}${BOLD}          TODOS LOS USUARIOS VMESS${N}"; hr; echo ""; list_vmess_users; echo ""; hr; pause ;;
       0) break ;;
       *) echo -e "  ${R}Opción inválida${N}"; sleep 1 ;;
     esac

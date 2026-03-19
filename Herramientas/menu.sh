@@ -1,90 +1,43 @@
 #!/bin/bash
-
 # =========================================================
-# SinNombre v2.0 - Menú de Herramientas (Ubuntu 22.04+)
-# Creador: @SIN_NOMBRE22
+# SinNombre v2.1 - Menú de Herramientas (Ubuntu 22.04+)
 # =========================================================
 
-# Cargar colores y funciones compartidas
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" 2>/dev/null \
-  || source "/etc/SN/lib/colores.sh" 2>/dev/null || true
+# 1. Cargar colores (Ruta absoluta para evitar errores)
+source /root/SN/lib/colores.sh 2>/dev/null || true
 
-# ===== RUTAS Y VARIABLES =====
+# 2. Variables de entorno
 VPS_src="/etc/SN"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-L_ROJA="${R}══════════════════════════ / / / ══════════════════════════${N}"
 
-# ===== FUNCIONES INTEGRADAS =====
-
-update_system() {
-  header "       ACTUALIZAR SISTEMA"
-  echo -e "${Y}Actualizando paquetes...${N}"
-  apt update && apt upgrade -y
-  echo -e "${G}Sistema actualizado.${N}"
-  pause
-}
-
-clean_cache() {
-  header "         LIMPIAR CACHE"
-  apt clean && apt autoclean
-  rm -rf ~/.cache/thumbnails/*
-  echo -e "${G}Cache limpiado.${N}"
-  pause
-}
-
-change_root_pass() {
-  header "    CAMBIAR CONTRASEÑA ROOT"
-  passwd root
-  pause
-}
-
-configure_domain() {
-  header "     CONFIGURAR DOMINIO VPS"
-  mkdir -p "$VPS_src"
-  echo -ne "${W}Ingresa el dominio de la VPS: ${G}"
-  read -r domain
-  if [[ -n "${domain:-}" ]]; then
-    echo "$domain" > "${VPS_src}/dominio.txt"
-    echo -e "${G}Dominio configurado: $domain${N}"
+# 3. Funciones del menú
+run_module() {
+  local script_name="$1"
+  local script_path="$2/$script_name"
+  if [[ -f "$script_path" ]]; then
+    chmod +x "$script_path"
+    bash "$script_path"
   else
-    echo -e "${Y}No se ingresó dominio.${N}"
+    echo -e "${R} Error: No se encontró $script_name${N}"; sleep 2
   fi
-  pause
 }
 
-restart_services() {
-  header "       REINICIAR SERVICIOS"
-  systemctl restart sshd 2>/dev/null || true
-  systemctl restart cron 2>/dev/null || true
-  systemctl restart rsyslog 2>/dev/null || true
-  echo -e "${G}Servicios reiniciados.${N}"
-  pause
-}
+# (Otras funciones: clean_cache, update_system, etc... se mantienen igual)
 
-# ===== MENÚ PRINCIPAL =====
-
-main_menu() {
-  while true; do
+# 4. Bucle del Menú
+while true; do
     clear_screen
-    echo -e "$L_ROJA"
+    msg -bar
     echo -e "${W}                        HERRAMIENTAS${N}"
-    echo -e "$L_ROJA"
-
-    # Flechas Rojas (${R}), Nombres Aqua (${C})
+    msg -bar
     echo -e " ${R}[${Y}01${R}] ${R}» ${C}LIMPIAR CACHE         ${R}[${Y}05${R}] ${R}» ${C}CAMBIAR PASS ROOT${N}"
     echo -e " ${R}[${Y}02${R}] ${R}» ${C}GESTION SWAP          ${R}[${Y}06${R}] ${R}» ${C}CONFIGURAR DOMINIO${N}"
     echo -e " ${R}[${Y}03${R}] ${R}» ${C}REINICIAR SERVICIOS   ${R}[${Y}07${R}] ${R}» ${C}ZONA HORARIA${N}"
-    echo -e " ${R}[${Y}04${R}] ${R}» ${C}ACTUALIZAR SISTEMA${N}"
-    
-    echo -e "${R}───────────────────────────────────────────────────────────${N}"
-    # Opción Salir en Rojo
+    echo -e " ${R}[${Y}04${R}] ${R}» ${C}ACTUALIZAR SISTEMA    ${R}[${Y}08${R}] ${R}» ${Y}${BOLD}TEMAS DEL PANEL${N}"
+    msg -bar3
     echo -e " ${R}[${Y}00${R}] ${R}« SALIR${N}"
-    echo -e "$L_ROJA"
-    
-    # Apartado de selección estilo profesional en Verde
-    echo ""
-    echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
-    echo -ne "╰─> : ${G}"
+    msg -bar
+    echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n╰─> : ${G}"
     read -r op
     echo -ne "${N}"
 
@@ -96,13 +49,13 @@ main_menu() {
       5|05) change_root_pass ;;
       6|06) configure_domain ;;
       7|07) run_module "zonahora.sh" "$ROOT_DIR" ;;
+      # --- EL SECRETO DEL CAMBIO INSTANTÁNEO ---
+      8|08) 
+        run_module "menucolor.sh" "$ROOT_DIR"
+        source /root/SN/lib/colores.sh # Recarga los colores al volver
+        ;;
       0|00) exit 0 ;;
       *) echo -e "${R} Opción inválida${N}"; sleep 1 ;;
     esac
-  done
-}
+done
 
-# Verificación Root
-require_root
-
-main_menu

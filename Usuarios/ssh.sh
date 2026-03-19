@@ -1,8 +1,12 @@
-#!/bin/bash
+[A#!/bin/bash
 # =========================================================
 # SinNombre v2.0 - Gestión de Usuarios SSH
 # Archivo: Usuarios/ssh.sh
 # =========================================================
+#!/bin/bash
+
+# Importar la librería de colores (Ruta absoluta para evitar fallos)
+[[ -f "/etc/SN/lib/colores.sh" ]] && source "/etc/SN/lib/colores.sh"
 
 # ── Cargar colores y funciones desde lib ────────────────
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" 2>/dev/null \
@@ -68,7 +72,8 @@ droppids() {
 }
 
 # =========================================================
-# OBTENER INFORMACIÓN COMPLETA DEL VPS (puertos, sistema...)
+# =========================================================
+# 1. OBTENER INFORMACIÓN DEL VPS
 # =========================================================
 get_vps_system_info() {
   if [[ -f /etc/os-release ]]; then
@@ -77,153 +82,100 @@ get_vps_system_info() {
   else
     VPS_DISTRO="$(uname -rs)"
   fi
-  VPS_IP="$(fun_ip)"
+
+  if declare -f fun_ip > /dev/null; then
+    VPS_IP="$(fun_ip)"
+  else
+    VPS_IP=$(curl -sS https://api.ipify.org || echo "No disponible")
+  fi
+
   VPS_DOMINIO=""
   [[ -f "/etc/SN/dominio.txt" ]] && VPS_DOMINIO="$(cat /etc/SN/dominio.txt)"
   VPS_ZONA="$(timedatectl 2>/dev/null | awk -F': ' '/Time zone/ {print $2}' | awk '{print $1}' || date +%Z)"
+
   read -r VPS_MEM_TOTAL VPS_MEM_USADA VPS_MEM_LIBRE <<< "$(free -m | awk '/^Mem:/ {print $2, $3, $7}')"
 }
 
-get_active_ports() {
+# =========================================================
+# 2. CAPTURADOR DE PUERTOS (CON FILTRO BADVPN)
+# =========================================================
+_get_formatted_ports() {
   local ss_output
   ss_output="$(ss -Hlntup 2>/dev/null)" || ss_output=""
-
-  PORTS_MAIN=""
-  PORTS_EXTRA=""
-  PORTS_SLOWDNS=""
-  SLOWDNS_NS=""
-  SLOWDNS_KEY=""
-
   declare -A svc_ports=()
+  declare -A bvp_count=()
 
-  # ── Leer TODOS los bloques de stunnel.conf ──────────────
-  # Mapea cada puerto accept → puerto connect destino
-  declare -A stunnel_accept_to_connect=()
+  # Mapeo Stunnel
+  declare -A st_map=()
   if [[ -f /etc/stunnel/stunnel.conf ]]; then
-    local current_accept=""
-    while IFS= read -r cline; do
-      cline="$(echo "$cline" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')"
-      [[ -z "$cline" || "$cline" == \#* ]] && continue
-      if [[ "$cline" == accept* ]]; then
-        current_accept="$(echo "$cline" | awk -F'=' '{print $2}' | awk -F: '{print $NF}' | tr -d ' ')"
-      elif [[ "$cline" == connect* && -n "$current_accept" ]]; then
-        local cdest
-        cdest="$(echo "$cline" | awk -F'=' '{print $2}' | awk -F: '{print $NF}' | tr -d ' ')"
-        stunnel_accept_to_connect["$current_accept"]="$cdest"
-        current_accept=""
-      fi
+    local acc=""
+    while IFS= read -r l; do
+      l=$(echo "$l" | tr -d ' ')
+      [[ "$l" == accept* ]] && acc="${l#*=}"
+      [[ "$l" == connect* && -n "$acc" ]] && { st_map["${acc##*:}"]="${l#*:}"; acc=""; }
     done < /etc/stunnel/stunnel.conf
   fi
 
-  # ── Mapear qué proceso escucha en cada puerto ──────────
-  declare -A port_to_proc=()
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
-    local p pr
-    p="$(echo "$line" | awk '{print $5}' | awk -F: '{print $NF}')"
-    pr="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p')"
-    [[ -n "$p" && -n "$pr" ]] && port_to_proc["$p"]="$pr"
-  done <<< "$ss_output"
-
-  # ── Procesos del sistema que NO queremos mostrar ───────
-  # systemd-network, systemd-resolve, cupsd, etc.
-  is_system_process() {
-    case "$1" in
-      systemd-network*|systemd-resolve*|systemd-timesyn*|cupsd|chronyd|dbus-daemon|snapd|multipathd|accounts-daemon|polkitd|networkd-*|resolved)
-        return 0 ;;
-      *)
-        return 1 ;;
-    esac
-  }
-
-  # ── Recorrer todos los sockets ─────────────────────────
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    local proto port proc
-    if echo "$line" | grep -qE '^udp|UNCONN'; then
-      proto="UDP"
-    else
-      proto="TCP"
-    fi
-    port="$(echo "$line" | awk '{print $5}' | awk -F: '{print $NF}')"
+    read -r netid state recv send local_addr peer rest <<< "$line"
+    local proto="TCP"
+    [[ "$netid" == udp* || "$state" == UNCONN* ]] && proto="UDP"
+    local port="${local_addr##*:}"
     [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]] && continue
-    proc="$(echo "$line" | sed -n 's/.*users:(("\([^"]*\)".*/\1/p')"
+    local proc=""
+    [[ "$rest" =~ users:\(\(\"([^\"]+)\" ]] && proc="${BASH_REMATCH[1]}"
     [[ -z "$proc" ]] && continue
 
-    # Saltar procesos del sistema
-    is_system_process "$proc" && continue
+    case "$proc" in systemd-*|cupsd|dbus*|resolved|multipathd|networkd*) continue ;; esac
 
-    local svc_name=""
+    local name=""
     case "$proc" in
-      sshd)              svc_name="SSH" ;;
-      dropbear)          svc_name="DROPBEAR" ;;
-      v2ray)             svc_name="V2RAY" ;;
-      xray)              svc_name="XRAY" ;;
-      squid|squid3)      svc_name="SQUID" ;;
-      stunnel|stunnel4)
-        # Clasificar cada puerto stunnel individualmente
-        local dest_p="${stunnel_accept_to_connect[$port]:-}"
-        if [[ -n "$dest_p" ]]; then
-          local dest_proc="${port_to_proc[$dest_p]:-}"
-          case "$dest_proc" in
-            python|python2|python3) svc_name="SSL WS" ;;
-            *)                      svc_name="SSL" ;;
-          esac
-        else
-          svc_name="SSL"
-        fi
+      sshd)        name="SSH" ;;
+      dropbear)    name="Dropbear" ;;
+      v2ray|xray)  name="V2Ray/Xray" ;;
+      squid*)      name="Squid" ;;
+      python*)     name="Python/WS" ;;
+      stunnel*)
+        local target="${st_map[$port]:-}"
+        [[ "$target" == *80 || "$target" == *8080 ]] && name="SSL WS" || name="SSL"
         ;;
-      openvpn)           svc_name="OPENVPN" ;;
-      badvpn-udpgw)      svc_name="BADVPN" ;;
-      python|python2|python3) svc_name="PYTHON" ;;
-      nginx)             svc_name="NGINX" ;;
-      node)              svc_name="NODE" ;;
-      udp-custom|udpgw)  svc_name="UDPCUSTOM" ;;
-      wireguard-go|wg)   svc_name="WIREGUARD" ;;
-      dns2socks|dnstt-server|slowdns) svc_name="SLOWDNS" ;;
-      *)                 svc_name="$proc" ;;
+      openvpn)     name="OpenVPN" ;;
+      badvpn*)     name="BadVPN" ;;
+      udp-custom)  name="UDP-Custom" ;;
+      wireguard*)  name="WireGuard" ;;
+      *slowdns*|dnstt*) name="SlowDNS" ;;
+      *)           name="${proc^}" ;;
     esac
 
-    if [[ "$proto" == "UDP" && ("$svc_name" == "V2RAY" || "$svc_name" == "XRAY") ]]; then
-      continue
+    [[ "$proto" == "UDP" && "$name" == "V2Ray/Xray" ]] && continue
+    if [[ "$name" == "BadVPN" ]]; then
+      ((bvp_count["BadVPN"]++))
+      [[ ${bvp_count["BadVPN"]} -gt 2 ]] && continue
     fi
 
-    local port_label="$port"
-
-    if [[ -z "${svc_ports[$svc_name]:-}" ]]; then
-      svc_ports[$svc_name]="$port_label"
-    elif [[ "${svc_ports[$svc_name]}" != *"$port_label"* ]]; then
-      svc_ports[$svc_name]="${svc_ports[$svc_name]}, $port_label"
+    local lbl="$port"; [[ "$proto" == "UDP" ]] && lbl="${port}(U)"
+    if [[ -z "${svc_ports[$name]:-}" ]]; then
+      svc_ports[$name]="$lbl"
+    elif [[ "${svc_ports[$name]}" != *"$lbl"* ]]; then
+      svc_ports[$name]+=", $lbl"
     fi
   done <<< "$ss_output"
 
-  for svc in "${!svc_ports[@]}"; do
-    local p="${svc_ports[$svc]}"
-    case "$svc" in
-      SSH|DROPBEAR|PYTHON|SQUID|NGINX|SSL|SSL\ WS|OPENVPN|V2RAY|XRAY)
-        PORTS_MAIN+="⇥ ${svc}: ${p}\n"
-        ;;
-      SLOWDNS)
-        PORTS_SLOWDNS+="⇥ 🐌 SLOWDNS: ${p}\n"
-        ;;
-      *)
-        PORTS_EXTRA+="⇥ ${svc}: ${p}\n"
-        ;;
-    esac
+  USER_PORTS_LIST=""
+  for svc in "SSH" "SSL WS" "SSL" "V2Ray/Xray" "Python/WS" "BadVPN" "UDP-Custom"; do
+    if [[ -n "${svc_ports[$svc]:-}" ]]; then
+      USER_PORTS_LIST+="${C}⇥ ${svc}:${N} ${G}${svc_ports[$svc]}${N}\n"
+      unset svc_ports["$svc"]
+    fi
   done
-
-  if [[ -f /etc/SN/slowdns/ns.txt ]]; then
-    SLOWDNS_NS="$(cat /etc/SN/slowdns/ns.txt 2>/dev/null)"
-  fi
-  if [[ -f /etc/SN/slowdns/public.key ]]; then
-    SLOWDNS_KEY="$(cat /etc/SN/slowdns/public.key 2>/dev/null)"
-  elif [[ -f /root/udp/public.key ]]; then
-    SLOWDNS_KEY="$(cat /root/udp/public.key 2>/dev/null)"
-  fi
+  for svc in "${!svc_ports[@]}"; do
+    USER_PORTS_LIST+="${C}⇥ ${svc}:${N} ${G}${svc_ports[$svc]}${N}\n"
+  done
 }
 
 # =========================================================
-# MOSTRAR INFO COMPLETA DEL USUARIO 
+# 3. MOSTRAR INFO FINAL AL USUARIO
 # =========================================================
 show_user_info() {
   local usuario="$1"
@@ -233,25 +185,23 @@ show_user_info() {
   local zip_file="${5:-}"
 
   get_vps_system_info
-  get_active_ports
+  _get_formatted_ports
 
   local fecha_exp
-  fecha_exp="$(date "+%Y-%m-%d" -d " + ${dias} days")"
+  fecha_exp=$(date "+%d/%m/%Y" -d " + ${dias} days")
 
-  echo ""
+  clear
   msg -bar
   echo -e "${Y}        【 ☬ USUARIO CREADO EXITOSAMENTE ☬ 】${N}"
   msg -bar
-  echo -e "${W}❍ ✅ Usuario creado con éxito${N}"
+  echo -e "${W}❍ ✅ Estado:${N}      ${G}Activado${N}"
   echo -e "${W}❍ 👤 Usuario:${N}     ${G}${usuario}${N}"
   echo -e "${W}❍ 🔐 Contraseña:${N}  ${G}${contrasena}${N}"
-  echo -e "${W}❍ 🔗 Limite:${N}      ${G}${limite}${N}"
-  echo -e "${W}❒ 🕑 Duración:${N}    ${Y}${dias} días${N}"
-  echo -e "${W}❒ 📅 Expira:${N}      ${Y}${fecha_exp}${N}"
-  [[ -n "$zip_file" ]] && \
-  echo -e "${W}❒ 📂 Archivo:${N}     ${C}${zip_file}${N}"
+  echo -e "${W}❍ 🔗 Límite:${N}      ${G}${limite}${N}"
+  echo -e "${W}❒ 📅 Expira:${N}      ${Y}${fecha_exp} (${dias} días)${N}"
+  [[ -n "$zip_file" ]] && echo -e "${W}❒ 📂 Archivo:${N}     ${C}${zip_file}${N}"
 
-  echo -e "${R}──────INFORMACION DEL VPS ──────${N}"
+    echo -e "${R}──────INFORMACION DEL VPS ──────${N}"
   echo -e "${W}› sistema:${N}       ${Y}${VPS_DISTRO}${N}"
   [[ -n "$VPS_DOMINIO" ]] && \
   echo -e "${W}› ◤ᴅᴏᴍɪɴɪᴏ ⏤͟͟͞͞➪:${N} ${Y}${VPS_DOMINIO}${N}"
@@ -261,29 +211,22 @@ show_user_info() {
   echo -e "${W}› ᴜsᴏ:${N}           ${Y}${VPS_MEM_USADA} MB${N}"
   echo -e "${W}› ʟɪʙʀᴇ:${N}         ${G}${VPS_MEM_LIBRE} MB${N}"
 
-  if [[ -n "$PORTS_MAIN" ]]; then
-    echo -e "${R}──────PUERTOS ACTIVOS ──────${N}"
-    echo -ne "${C}${PORTS_MAIN}${N}"
+  if [[ -n "$USER_PORTS_LIST" ]]; then
+    echo -e "${R}────── SERVICIOS Y PUERTOS ──────${N}"
+    echo -e "$USER_PORTS_LIST"
   fi
 
-  if [[ -n "$PORTS_EXTRA" ]]; then
-    echo -e "${R}──────SERVICIOS EXTRA ──────${N}"
-    echo -ne "${C}${PORTS_EXTRA}${N}"
-  fi
-
-  if [[ -n "$PORTS_SLOWDNS" ]]; then
-    echo -e "${R}──────SLOWDNS ──────${N}"
-    echo -ne "${C}${PORTS_SLOWDNS}${N}"
-    [[ -n "$SLOWDNS_NS" ]] && \
-    echo -e "${C}⇥ ɴᴀᴍᴇsᴇʀᴠᴇʀ:${N} ${Y}${SLOWDNS_NS}${N}"
-    [[ -n "$SLOWDNS_KEY" ]] && \
-    echo -e "${C}⇥ 🔑Key:${N} ${Y}${SLOWDNS_KEY}${N}"
+  if [[ -f "/etc/SN/slowdns/ns.txt" ]]; then
+    echo -e "${R}────── CONFIGURACIÓN SLOWDNS ──────${N}"
+    echo -e "${C}⇥ NS:${N} ${Y}$(cat /etc/SN/slowdns/ns.txt)${N}"
+    [[ -f "/etc/SN/slowdns/public.key" ]] && echo -e "${C}⇥ Key:${N} ${Y}$(cat /etc/SN/slowdns/public.key)${N}"
   fi
 
   msg -bar
-  echo -e "${Y}            ►► Presione ENTER para continuar ◄◄${N}"
-  read
+  echo -e "${Y}      ►► Presione ENTER para continuar ◄◄${N}"
+  read -r
 }
+
 
 # =========================================================
 # VALIDACIÓN DE ERRORES
@@ -955,132 +898,98 @@ eliminar_all() {
 }
 
 # =========================================================
-# MONITOR DE USUARIOS CONECTADOS
-# =========================================================
+# MONITOR DE USUARIOS CONECTADOS (VERSIÓN LIMPIA)
 # =========================================================
 UDP_LOG_FILE="/var/log/udp-custom.log"
 
+# Funciones de extracción (Silenciosas y eficientes)
 extract_users_from_json_log() {
   local file="$1"
   [[ ! -f "$file" ]] && return 1
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    if command -v jq >/dev/null 2>&1; then
-      local user ip
-      user=$(echo "$line" | jq -r 'try(.user // .username // .auth.user // empty)' 2>/dev/null || echo "")
-      ip=$(echo "$line" | jq -r 'try(.remote // .ip // .addr // .client_ip // empty)' 2>/dev/null || echo "")
-      if [[ -n "$user" && "$user" != "null" ]]; then
-        echo "${user}|${ip:-"-"}"
-      fi
-    fi
-  done < "$file"
-  return 0
+  if command -v jq >/dev/null 2>&1; then
+    jq -r 'try(.user // .username // .auth.user // empty)' "$file" 2>/dev/null
+  fi
 }
 
 extract_users_from_text_log() {
   local file="$1"
   [[ ! -f "$file" ]] && return 1
-  grep -E -i "auth|authenticated|login|new connection|accepted|connect|client|username|user" "$file" 2>/dev/null | while IFS= read -r line; do
-    local ip user
-    ip=$(echo "$line" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1 || true)
-    user=$(echo "$line" | sed -nE 's/.*[Uu]sername[=:\ ]*"?([A-Za-z0-9._-]+)"?.*/\1/p' || true)
-    [[ -z "$user" ]] && user=$(echo "$line" | sed -nE 's/.*[Uu]ser[=:\ ]*"?([A-Za-z0-9._-]+)"?.*/\1/p' || true)
-    [[ -z "$user" ]] && user=$(echo "$line" | sed -nE 's/.*client[ =\[]*"?([A-Za-z0-9._-]+)"?.*/\1/p' || true)
-    [[ -n "$user" ]] && echo "${user}|${ip:-"-"}"
-  done
-  return 0
+  grep -E -i "auth|authenticated|login|new connection|accepted|connect|client|username|user" "$file" 2>/dev/null | \
+  sed -nE 's/.*([Uu]sername|[Uu]ser|client)[=:\ ]*"?([A-Za-z0-9._-]+)"?.*/\2/p'
 }
 
 build_udp_user_list() {
-  local file="$UDP_LOG_FILE"
-  [[ ! -f "$file" ]] && return 1
-  if command -v jq >/dev/null 2>&1; then
-    extract_users_from_json_log "$file" 2>/dev/null
-  fi
-  extract_users_from_text_log "$file" 2>/dev/null
+  extract_users_from_json_log "$UDP_LOG_FILE"
+  extract_users_from_text_log "$UDP_LOG_FILE"
 }
 
 sshmonitor() {
+  # Cargar datos de red y sistema antes de mostrar
+  get_vps_system_info
+  
   clear
-
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
-  echo -e "                 📡 MONITOR DE USUARIOS"
-  echo -e "${R}───────────────  ·  ───────────────  ·  ────────────────${N}"
-
-  printf " %-15s %-9s %-12s %-10s\n" "USUARIO"  "ESTADO"  "CONEXIONES"  "TIEMPO"
-
-  echo -e "${R}───────────────  ·  ───────────────  ·  ────────────────${N}"
-
-  local UDP_PORT=36712
-
-  if [[ -f /root/udp/config.json ]] && command -v jq >/dev/null 2>&1; then
-    local porttmp
-    porttmp=$(jq -r '.listen // empty' "/root/udp/config.json" 2>/dev/null | sed 's/://')
-    [[ -n "$porttmp" ]] && UDP_PORT="$porttmp"
+  # Usar title si existe, si no, un header manual con tus colores
+  if declare -f title > /dev/null; then
+    title "MONITOR DE USUARIOS CONECTADOS"
+  else
+    msg -bar
+    echo -e "                 ${C}📡 MONITOR DE USUARIOS${N}"
+    msg -bar
   fi
 
+  # Encabezado de la tabla
+  printf " ${W}%-16s %-10s %-12s %-10s${N}\n" "USUARIO" "ESTADO" "CONEX/LIM" "TIEMPO"
+  msg -bar3
+
+  # Obtener lista de usuarios UDP una sola vez para ahorrar CPU
   declare -A UDP_USER_COUNT
-
   if [[ -f "$UDP_LOG_FILE" ]]; then
-    while IFS= read -r entry; do
-      [[ -z "$entry" ]] && continue
-      user="${entry%%|*}"
-      [[ -z "$user" ]] && continue
-      UDP_USER_COUNT["$user"]=$(( ${UDP_USER_COUNT["$user"]:-0} + 1 ))
-    done < <(build_udp_user_list 2>/dev/null | sort -u)
+    while IFS= read -r u; do
+      [[ -n "$u" ]] && ((UDP_USER_COUNT["$u"]++))
+    done < <(build_udp_user_list)
   fi
 
-  cat_users=$(awk -F: '$3>=1000 && $7 ~ /false/ {print}' /etc/passwd)
+  # Filtrar usuarios reales del sistema
+  local cat_users=$(awk -F: '$3>=1000 && $7 ~ /false/ {print $1}' /etc/passwd)
 
-  for user in $(echo "$cat_users" | awk -F: '{print $1}'); do
+  for user in $cat_users; do
+    # Obtener límite (desde el comentario de passwd o 0 por defecto)
+    local limit=$(grep -w "$user" /etc/passwd | cut -d: -f5 | cut -d, -f1)
+    [[ -z "$limit" || ! "$limit" =~ ^[0-9]+$ ]] && limit=0
 
-    s2ssh=$(echo "$cat_users" | grep -w "$user" | awk -F: '{print $5}' | cut -d',' -f1)
-    [[ -z "$s2ssh" || ! "$s2ssh" =~ ^[0-9]+$ ]] && s2ssh=0
+    # Contar conexiones por servicio
+    local sshd_c=$(ps -u "$user" 2>/dev/null | grep -cw sshd)
+    local drop_c=$(ps aux 2>/dev/null | grep -i dropbear | grep -w "$user" | grep -vc grep)
+    local ovp_c=0
+    [[ -f /etc/openvpn/openvpn-status.log ]] && ovp_c=$(grep -cw "$user" /etc/openvpn/openvpn-status.log)
+    local udp_c=${UDP_USER_COUNT["$user"]:-0}
 
-    sshd_count=$(ps -u "$user" 2>/dev/null | grep -w sshd | wc -l)
-    drop=$(ps aux 2>/dev/null | grep -i dropbear | grep -w "$user" | grep -v grep | wc -l)
+    local total_conex=$(( sshd_c + drop_c + ovp_c + udp_c ))
 
-    ovp=0
-    [[ -f /etc/openvpn/openvpn-status.log ]] && ovp=$(grep -w ",$user," /etc/openvpn/openvpn-status.log 2>/dev/null | wc -l)
+    # Determinar estado y color
+    local status_txt="OFFLINE"
+    local color_status=$R
+    local time_display="00:00:00"
 
-    udp_proc=${UDP_USER_COUNT["$user"]:-0}
-
-    conex=$(( sshd_count + drop + ovp + udp_proc ))
-
-    if [[ $conex -gt 0 ]]; then
-      pid=$(ps -u "$user" -o pid= 2>/dev/null | head -n1)
+    if [[ $total_conex -gt 0 ]]; then
+      status_txt="ONLINE"
+      color_status=$G
+      # Calcular tiempo de la primera conexión encontrada
+      local pid=$(ps -u "$user" -o pid= 2>/dev/null | head -n1 | tr -d ' ')
       if [[ -n "$pid" ]]; then
-        timerr=$(ps -o etime= -p "$pid" 2>/dev/null | sed 's/^ *//')
-        [[ ${#timerr} -lt 8 ]] && timerr="00:$timerr"
-      else
-        timerr="00:00:00"
+        time_display=$(ps -o etime= -p "$pid" 2>/dev/null | sed 's/^ *//')
+        [[ ${#time_display} -lt 8 ]] && time_display="00:$time_display"
       fi
-    else
-      timerr="00:00:00"
     fi
 
-    if [[ $conex -eq 0 ]]; then
-      estado_txt="OFFLINE"
-      estado_color=$R
-    else
-      estado_txt="ONLINE"
-      estado_color=$G
-    fi
-
-    printf " ${Y}%-15s${N} ${estado_color}%-10s${N} ${Y}%-12s${N} ${Y}%-10s${N}\n" \
-    "$user" "$estado_txt" "$conex/$s2ssh" "$timerr"
-
+    # Imprimir fila con formato alineado
+    printf " ${Y}%-16s${N} ${color_status}%-10s${N} ${W}%-12s${N} ${C}%-10s${N}\n" \
+      "$user" "$status_txt" "$total_conex/$limit" "$time_display"
   done
 
-  if systemctl list-units --type=service --state=running 2>/dev/null | grep -q "udp-custom"; then
-    udp_total=$(ss -u -a 2>/dev/null | grep -cE ":${UDP_PORT}\b")
-    echo -e "${R}───────────────  ·  ───────────────  ·  ────────────────${N}"
-    echo -e "${W} UDP CUSTOM ACTIVO | PUERTO: ${Y}$UDP_PORT${W} | CONEXIONES: ${G}$udp_total${N}"
-  fi
-
-  echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"
+  msg -bar
   echo -e "${Y}            ►► Presione ENTER para continuar ◄◄${N}"
-  read
+  read -r
 }
 
 # =========================================================
@@ -1501,30 +1410,46 @@ CRONEOF
 }
 
 # =========================================================
+# =========================================================
 # MENÚ PRINCIPAL SSH
 # =========================================================
 while :; do
-  local_lim=$(msg -verm2 "[OFF]")
-  limitador_esta_corriendo && local_lim=$(msg -verd "[ON]")
+  # Estado del limitador con colores directos
+  local_lim="${R}[OFF]${N}"
+  limitador_esta_corriendo && local_lim="${G}[ON]${N}"
 
-  title "ADMINISTRACIÓN DE USUARIOS SSH"
+  # Si 'title' falla, usamos header o msg -bar
+  if declare -f title > /dev/null; then
+    title "ADMINISTRACIÓN DE USUARIOS SSH"
+  else
+    clear_screen
+    msg -bar
+    echo -e "${W}      ADMINISTRACIÓN DE USUARIOS SSH${N}"
+    msg -bar
+  fi
 
-  msg -bar3
+  # Menú con colores limpios
   menu_func \
     "NUEVO USUARIO SSH ✏️" \
     "CREAR USUARIO TEMPORAL ⏱" \
-    "$(msg -verm2 "REMOVER USUARIO") 🗑" \
-    "$(msg -verd "RENOVAR USUARIO") ♻️" \
+    "${R}REMOVER USUARIO${N} 🗑" \
+    "${G}RENOVAR USUARIO${N} ♻️" \
     "EDITAR USUARIO 📝" \
     "BLOQ/DESBLOQ USUARIO 🔒" \
-    "$(msg -verd "DETALLES DE USUARIOS") 🔎" \
+    "${G}DETALLES DE USUARIOS${N} 🔎" \
     "MONITOR DE USUARIOS 📡" \
-    "🔒 $(msg -ama "LIMITADOR DE CUENTAS") 🔒 ${local_lim}" \
+    "🔒 ${Y}LIMITADOR DE CUENTAS${N} 🔒 ${local_lim}" \
     "ELIMINAR USUARIOS VENCIDOS" \
-    "⚠️ $(msg -verm2 "ELIMINAR TODOS LOS USUARIOS") ⚠️"
-  back
+    "⚠️ ${R}ELIMINAR TODOS LOS USUARIOS${N} ⚠️"
+  
+  msg -bar3
+  echo -e " [0] Volver"
+  msg -bar
 
-  selection=$(selection_fun 11)
+  # Selección
+  echo -ne " ${W}Opción:${G} "
+  read -r selection
+  
   case "${selection}" in
     0)  break ;;
     1)  new_user ;;
@@ -1538,5 +1463,6 @@ while :; do
     9)  limiter ;;
     10) rm_vencidos ;;
     11) eliminar_all ;;
+    *)  msg -verm " Opción inválida"; sleep 1 ;;
   esac
 done

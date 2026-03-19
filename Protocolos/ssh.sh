@@ -2,31 +2,34 @@
 set -euo pipefail
 
 # =========================================================
-# SinNombre v1.0 - ADMINISTRADOR SSH (Diseño original)
+# SinNombre v1.0 - ADMINISTRADOR SSH
 # Archivo: SN/Protocolos/ssh.sh
 # =========================================================
 
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-B='\033[0;34m'
-M='\033[0;35m'
-C='\033[0;36m'
-W='\033[1;37m'
-N='\033[0m'
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
+# ── Cargar colores desde lib ────────────────────────────
+LIB_COLORES="$ROOT_DIR/lib/colores.sh"
+if [[ -f "$LIB_COLORES" ]]; then
+  source "$LIB_COLORES"
+else
+  # Fallback: colores básicos si no encuentra la librería
+  R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'
+  W='\033[1;37m'; N='\033[0m'; BOLD='\033[1m'
+  hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
+  sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
+  pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
+  clear_screen() { clear; }
+fi
+
+# ── Utilidades de Servicio ───────────────────────────────
 
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-    echo -e "${R}Ejecuta como root.${N}"
+    echo -e "${R}Error: Ejecuta como root.${N}"
     exit 1
   fi
 }
-
-hr() { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
 
 ssh_service_name() {
   if systemctl list-unit-files 2>/dev/null | awk '{print $1}' | grep -qx 'ssh.service'; then
@@ -44,9 +47,9 @@ ssh_is_on() {
 
 ssh_badge() {
   if ssh_is_on; then
-    echo -e "${G}[ON]${N}"
+    echo -e "${G}[ ON ]${N}"
   else
-    echo -e "${R}[OFF]${N}"
+    echo -e "${R}[ OFF ]${N}"
   fi
 }
 
@@ -56,25 +59,28 @@ get_ssh_ports_compact() {
   [[ -n "${ports:-}" ]] && echo "$ports" || echo "22"
 }
 
-# =========================
-# Acciones (funcionales)
-# =========================
+# ── Acciones ─────────────────────────────────────────────
+
 change_ssh_port() {
-  clear
+  clear_screen
   hr
   echo -e "${W}               MODIFICAR PUERTO SSH${N}"
   hr
   echo ""
-  read -r -p "Nuevo puerto SSH: " newp
-  [[ "${newp:-}" =~ ^[0-9]+$ ]] || { echo -e "${R}Puerto inválido.${N}"; pause; return; }
-  (( newp >= 1 && newp <= 65535 )) || { echo -e "${R}Puerto fuera de rango.${N}"; pause; return; }
+  echo -ne "  ${W}Nuevo puerto SSH: ${G}"
+  read -r newp
+  echo -ne "${N}"
+  [[ "${newp:-}" =~ ^[0-9]+$ ]] || { echo -e "  ${R}✗ Puerto inválido.${N}"; pause; return; }
+  (( newp >= 1 && newp <= 65535 )) || { echo -e "  ${R}✗ Puerto fuera de rango.${N}"; pause; return; }
 
   local cfg="/etc/ssh/sshd_config"
-  [[ -f "$cfg" ]] || { echo -e "${R}No existe $cfg${N}"; pause; return; }
+  [[ -f "$cfg" ]] || { echo -e "  ${R}✗ No existe $cfg${N}"; pause; return; }
 
   echo ""
-  read -r -p "¿Confirmas cambiar SSH a puerto ${newp}? (s/n): " yn
-  [[ "${yn,,}" == "s" ]] || { echo "Cancelado."; pause; return; }
+  echo -ne "  ${W}¿Confirmas cambiar SSH al puerto ${Y}${newp}${W}? (s/n): ${G}"
+  read -r yn
+  echo -ne "${N}"
+  [[ "${yn,,}" == "s" ]] || { echo -e "  ${Y}Cancelado.${N}"; pause; return; }
 
   cp -a "$cfg" "${cfg}.bak.$(date +%F_%H%M%S)"
 
@@ -87,31 +93,29 @@ change_ssh_port() {
 
   if sshd -t 2>/dev/null; then
     systemctl restart "$(ssh_service_name)" 2>/dev/null || true
-    echo -e "${G}Puerto SSH actualizado y servicio reiniciado.${N}"
-    echo -e "${Y}Recuerda abrir el puerto ${newp} en tu firewall si aplica.${N}"
+    echo -e "  ${G}✓ Puerto SSH actualizado y servicio reiniciado.${N}"
+    echo -e "  ${Y}⚠ Recuerda abrir el puerto ${newp} en tu firewall.${N}"
   else
-    echo -e "${R}Config inválida. Revirtiendo backup...${N}"
+    echo -e "  ${R}✗ Configuración inválida. Revirtiendo cambios...${N}"
     local lastbak
     lastbak="$(ls -1t "${cfg}.bak."* 2>/dev/null | head -n1 || true)"
     [[ -n "${lastbak:-}" ]] && cp -a "$lastbak" "$cfg" || true
   fi
-
   pause
 }
 
 config_key_root() {
-  clear
+  clear_screen
   hr
   echo -e "${W}        CONFIGURAR CLAVE Y ACCESO ROOT${N}"
   hr
-  echo -e "${Y}En desarrollo...${N}"
+  echo -e "  ${Y}Módulo en desarrollo...${N}"
   pause
 }
 
 toggle_ssh_service() {
   local svc
   svc="$(ssh_service_name)"
-
   if ssh_is_on; then
     systemctl stop "$svc" >/dev/null 2>&1 || true
     systemctl disable "$svc" >/dev/null 2>&1 || true
@@ -121,34 +125,31 @@ toggle_ssh_service() {
   fi
 }
 
-restart_ssh() {
-  systemctl restart "$(ssh_service_name)" >/dev/null 2>&1 || true
-}
-
 uninstall_openssh() {
-  clear
+  clear_screen
   hr
   echo -e "${R}           DESINSTALAR OPENSSH-SERVER${N}"
   hr
-  echo -e "${Y}Advertencia:${N} si desinstalas OpenSSH puedes perder acceso."
+  echo -e "  ${Y}⚠ Advertencia:${N} ${W}Si desinstalas OpenSSH perderás el acceso remoto.${N}"
   echo ""
-  read -r -p "¿Confirmas desinstalar openssh-server? (s/n): " yn
-  [[ "${yn,,}" == "s" ]] || { echo "Cancelado."; pause; return; }
+  echo -ne "  ${W}¿Confirmas la desinstalación? (s/n): ${G}"
+  read -r yn
+  echo -ne "${N}"
+  [[ "${yn,,}" == "s" ]] || { echo -e "  ${Y}Cancelado.${N}"; pause; return; }
 
   apt-get remove -y openssh-server >/dev/null 2>&1 || true
   apt-get autoremove -y >/dev/null 2>&1 || true
-  echo -e "${G}OpenSSH-Server desinstalado.${N}"
+  echo -e "  ${G}✓ OpenSSH-Server desinstalado.${N}"
   pause
 }
 
-# =========================
-# Menú principal (UNA SOLA LISTA)
-# =========================
+# ── Menú Principal ───────────────────────────────────────
+
 main_menu() {
   require_root
 
   while true; do
-    clear
+    clear_screen
     local ports st
     ports="$(get_ssh_ports_compact)"
     st="$(ssh_badge)"
@@ -156,29 +157,32 @@ main_menu() {
     hr
     echo -e "${W}                 ADMINISTRADOR SSH${N}"
     hr
-    echo -e "${R}[${N} ${W}PUERTOS:${N} ${Y}${ports}${N}"
-    hr
-
-    echo -e "${R}[${Y}1${R}]${N} ${C}MODIFICAR PUERTO SSH${N}"
-    echo -e "${R}[${Y}2${R}]${N} ${C}CONFIGURAR CLAVE Y ACCESO ROOT${N}"
-    echo -e "${R}[${Y}4${R}]${N} ${C}INICIAR/DETENER SERVIDOR SSH${N} ${st}"
-    echo -e "${R}[${Y}5${R}]${N} ${C}REINICIAR SERVIDOR SSH${N}"
-    echo -e "${R}[${Y}6${R}]${N} ${C}DESINSTALAR OPENSSH-SERVER${N}"
-    echo -e "${R}[${Y}0${R}]${N} ${W}VOLVER${N}"
-
+    echo -e "  ${W}PUERTOS ACTUALES:${N} ${Y}${ports}${N}"
     hr
     echo ""
-    echo -ne "${W}Ingresa una Opcion: ${G}"
+    echo -e "  ${R}[${Y}1${R}]${N} ${C}MODIFICAR PUERTO SSH${N}"
+    echo -e "  ${R}[${Y}2${R}]${N} ${C}CONFIGURAR CLAVE Y ACCESO ROOT${N}"
+    sep
+    echo -e "  ${R}[${Y}4${R}]${N} ${C}INICIAR / DETENER SSH${N}   ${st}"
+    echo -e "  ${R}[${Y}5${R}]${N} ${C}REINICIAR SERVIDOR SSH${N}"
+    sep
+    echo -e "  ${R}[${Y}6${R}]${N} ${C}DESINSTALAR OPENSSH-SERVER${N}"
+    hr
+    echo -e "  ${R}[${Y}0${R}]${N} ${W}VOLVER${N}"
+    hr
+    echo ""
+    echo -ne "  ${W}Seleccione una opción: ${G}"
     read -r op
+    echo -ne "${N}"
 
     case "${op:-}" in
       1) change_ssh_port ;;
       2) config_key_root ;;
       4) toggle_ssh_service ;;
-      5) restart_ssh; echo -e "${G}Servicio SSH reiniciado.${N}"; pause ;;
+      5) systemctl restart "$(ssh_service_name)" 2>/dev/null; echo -e "  ${G}✓ Servicio reiniciado.${N}"; sleep 1 ;;
       6) uninstall_openssh ;;
-      0)  break ;; 
-      *) echo -e "${B}Opción inválida${N}"; sleep 1 ;;
+      0) break ;;
+      *) echo -e "  ${R}Opción inválida${N}"; sleep 1 ;;
     esac
   done
 }
