@@ -4,57 +4,31 @@
 # =========================================================
 
 # ------------------------------------------------------------------
-# 1. Búsqueda dinámica de la librería de colores
+# 1. Cargar librería de colores (busca en /root/SN y /etc/SN)
 # ------------------------------------------------------------------
-find_colores() {
-    local posibles=(
-        "/root/SN/lib/colores.sh"
-        "/etc/SN/lib/colores.sh"
-        "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh"
-        "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/colores.sh"
-    )
-    for path in "${posibles[@]}"; do
-        if [[ -f "$path" ]]; then
-            echo "$path"
-            return 0
-        fi
-    done
-    return 1
-}
-
-LIB_COLORES=$(find_colores)
-if [[ -f "$LIB_COLORES" ]]; then
-    source "$LIB_COLORES"
+if [[ -f "/root/SN/lib/colores.sh" ]]; then
+    source "/root/SN/lib/colores.sh"
+    LIB_DIR="/root/SN/lib"
+elif [[ -f "/etc/SN/lib/colores.sh" ]]; then
+    source "/etc/SN/lib/colores.sh"
+    LIB_DIR="/etc/SN/lib"
 else
-    # Fallback mínimo (si no se encuentra colores.sh, definimos lo esencial)
+    # Fallback: definir funciones mínimas para que el script funcione
     R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
     M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
     BOLD='\033[1m'
     hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
     sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
     clear_screen() { clear; }
+    # Crear directorio por defecto para guardar el tema
+    LIB_DIR="/etc/SN/lib"
+    mkdir -p "$LIB_DIR"
 fi
 
 # ------------------------------------------------------------------
-# 2. Determinar la ruta del archivo tema.conf (mismo directorio que colores.sh)
+# 2. Definir la ruta del archivo de configuración del tema
 # ------------------------------------------------------------------
-if [[ -n "$LIB_COLORES" && -f "$LIB_COLORES" ]]; then
-    TEMA_DIR="$(dirname "$LIB_COLORES")"
-else
-    # Intentar directorios conocidos
-    for d in "/root/SN/lib" "/etc/SN/lib"; do
-        if [[ -d "$d" ]]; then
-            TEMA_DIR="$d"
-            break
-        fi
-    done
-    # Si no existe, crear /etc/SN/lib
-    if [[ -z "$TEMA_DIR" ]]; then
-        TEMA_DIR="/etc/SN/lib"
-        mkdir -p "$TEMA_DIR"
-    fi
-fi
-CONFIG_TEMA="$TEMA_DIR/tema.conf"
+CONFIG_TEMA="$LIB_DIR/tema.conf"
 
 # ------------------------------------------------------------------
 # 3. Definición de 30 Temas RGB y sus nombres
@@ -74,7 +48,7 @@ T[28]='\033[38;2;221;160;221m'; T[29]='\033[38;2;70;130;180m';    T[30]='\033[38
 N=("" "Rojo" "Verde" "Azul" "Cian" "Oro" "Rosa" "Viola" "Naranja" "Spring" "HotPk" "Lima" "Kaki" "Nieve" "Gris" "BlueP" "Bord" "Teal" "Indig" "Gold" "Turq" "Salmon" "Lawn" "PureW" "Dodger" "Saddle" "DarkOr" "PalGr" "Plum" "Steel" "Black")
 
 # ------------------------------------------------------------------
-# 4. Bucle del selector
+# 4. Bucle principal del selector
 # ------------------------------------------------------------------
 while true; do
     clear_screen
@@ -97,7 +71,7 @@ while true; do
     if [[ -n "${T[$opt]:-}" ]]; then
         # Guardar color en el archivo de configuración
         echo "L_COLOR='${T[$opt]}'" > "$CONFIG_TEMA"
-        # Actualizar variable L_COLOR en la sesión actual para que los cambios se vean inmediatamente
+        # Aplicar el color en la sesión actual para que se vea de inmediato
         L_COLOR="${T[$opt]}"
         echo -e "\n  ${G}✓ ¡Tema '${N[$opt]}' aplicado!${N}"
         sleep 1

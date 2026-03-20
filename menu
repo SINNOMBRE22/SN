@@ -9,23 +9,41 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # =========================================================
 
 # ── Cargar colores desde lib ────────────────────────────
-LIB_COLORES="$ROOT_DIR/lib/colores.sh"
-if [[ -f "$LIB_COLORES" ]]; then
-  source "$LIB_COLORES"
-else
-  # Fallback: definir colores inline
-  R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
-  M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
-  BOLD='\033[1m'
-  hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
-#  sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
-  step() { printf " ${C}•${N} ${W}%s${N} " "$1"; }
-  ok()   { echo -e "${G}[OK]${N}"; }
-  fail() { echo -e "${R}[FAIL]${N}"; }
-  pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
-  clear_screen() { clear; }
-fi
+# ------------------------------------------------------------------
+# 1. Búsqueda dinámica de la librería de colores
+# ------------------------------------------------------------------
+# ── Cargar colores desde lib (búsqueda flexible) ─────────────────
+LIB_COLORES=""
+# Rutas posibles en orden de prioridad
+for ruta in \
+    "/root/SN/lib/colores.sh" \
+    "/etc/SN/lib/colores.sh" \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh" \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/colores.sh"
+do
+    if [[ -f "$ruta" ]]; then
+        LIB_COLORES="$ruta"
+        break
+    fi
+done
 
+if [[ -n "$LIB_COLORES" ]]; then
+    source "$LIB_COLORES"
+else
+    # Fallback: definir colores inline (funciones mínimas)
+    R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
+    M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
+    BOLD='\033[1m'
+    hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
+    sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
+    step() { printf " ${C}•${N} ${W}%s${N} " "$1"; }
+    ok()   { echo -e "${G}[OK]${N}"; }
+    fail() { echo -e "${R}[FAIL]${N}"; }
+    pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
+    clear_screen() { clear; }
+    # Si necesitas msg, title, etc. en el fallback, defínelos aquí también
+    msg() { echo -e "$*"; }
+fi
 # ── Licencia ────────────────────────────────────────────
 LIC_DIR="/etc/.sn"
 LIC_PATH="${LIC_DIR}/lic"
