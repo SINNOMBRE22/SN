@@ -509,15 +509,43 @@ run_module() {
 }
 
 # --- FUNCIÓN PRINCIPAL CON AUTO-ACTUALIZACIÓN ---
+#!/bin/bash
+
+# ─── FUNCIÓN PARA MOSTRAR MENÚ CON V2RAY ──────────────
+show_full_menu() {
+    msg -bar
+    echo -e "${W}                MENU PRINCIPAL (V2Ray Detectado)${N}"
+    msg -bar
+    echo -e " ${R}[${Y}1${R}]  ${C}USUARIOS SSH          ${R}[${Y}5${R}]  ${C}BANNER SSH${N}"
+    echo -e " ${R}[${Y}2${R}]  ${C}USUARIOS V2RAY        ${R}[${Y}6${R}]  ${C}ADMINISTRAR PUERTOS${N}"
+    echo -e " ${R}[${Y}3${R}]  ${C}INSTALADORES          ${R}[${Y}7${R}]  ${C}SPEEDTEST${N}"
+    echo -e " ${R}[${Y}4${R}]  ${C}HERRAMIENTAS${N}"
+    msg -bar3
+    echo -e " ${R}[${Y}99${R}]  ${C}REBOOT VPS            ${R}[${Y}100${R}] ${C}DESINSTALAR SCRIPT${N}"
+    echo -e " ${R}[${Y}101${R}] ${C}ACTUALIZAR SCRIPT     ${R}[${Y}102${R}] ${C}SALIR DE LA VPS${N}"
+    echo -e " ${R}[${Y}0${R}]   ${C}SALIR${N}"
+}
+
+# ─── FUNCIÓN PARA MOSTRAR MENÚ SIN V2RAY ──────────────
+show_no_v2ray_menu() {
+    msg -bar
+    echo -e "${W}                MENU PRINCIPAL${N}"
+    msg -bar
+    echo -e " ${R}[${Y}1${R}]  ${C}USUARIOS SSH          ${R}[${Y}4${R}]  ${C}BANNER SSH${N}"
+    echo -e " ${R}[${Y}2${R}]  ${C}PROTOCOLOS            ${R}[${Y}5${R}]  ${C}ADMINISTRAR PUERTOS${N}"
+    echo -e " ${R}[${Y}3${R}]  ${C}HERRAMIENTAS          ${R}[${Y}6${R}]  ${C}SPEEDTEST${N}"
+    msg -bar3
+    echo -e " ${R}[${Y}99${R}]  ${C}REBOOT VPS            ${R}[${Y}100${R}] ${C}DESINSTALAR SCRIPT${N}"
+    echo -e " ${R}[${Y}101${R}] ${C}ACTUALIZAR SCRIPT     ${R}[${Y}102${R}] ${C}SALIR DE LA VPS${N}"
+    echo -e " ${R}[${Y}0${R}]   ${C}SALIR${N}"
+}
+
+# ─── MENÚ PRINCIPAL CON AUTO-ACTUALIZACIÓN ────────────
 main_menu() {
   while true; do
-    # ─── EL TRUCO DEL MICROSEGUNDO ──────────────
-    # Recarga la librería en cada ciclo. Si el usuario cambió
-    # el color en Herramientas, aquí se inyecta el nuevo L_COLOR.
+    # Recarga de colores dinámica
     source /root/SN/lib/colores.sh 2>/dev/null
-    # ────────────────────────────────────────────
-
-    # Limpieza de pantalla para el nuevo color
+    
     clear_screen
 
     # Lógica de detección de V2Ray/Xray
@@ -529,62 +557,62 @@ main_menu() {
       v2ray_installed=true
     fi
 
-    # Estas funciones ahora usarán el color del tema guardado
+    # Encabezados
     show_banner
     show_services_status
     show_system_status
 
-    msg -bar # Línea divisoria dinámica
-    echo -e "${W}                MENU PRINCIPAL${N}"
-    msg -bar
-
-    if $v2ray_installed; then
-      # MENÚ COMPLETO (V2Ray Instalado)
-      echo -e " ${R}[${Y}1${R}]  ${C}USUARIOS SSH          ${R}[${Y}5${R}]  ${C}BANNER SSH${N}"
-      echo -e " ${R}[${Y}2${R}]  ${C}USUARIOS V2RAY        ${R}[${Y}6${R}]  ${C}ADMINISTRAR PUERTOS${N}"
-      echo -e " ${R}[${Y}3${R}]  ${C}INSTALADORES          ${R}[${Y}7${R}]  ${C}SPEEDTEST${N}"
-      echo -e " ${R}[${Y}4${R}]  ${C}HERRAMIENTAS${N}"
-      msg -bar3
-      echo -e " ${R}[${Y}99${R}]  ${C}REBOOT VPS            ${R}[${Y}100${R}] ${C}DESINSTALAR SCRIPT${N}"
-      echo -e " ${R}[${Y}101${R}] ${C}ACTUALIZAR SCRIPT     ${R}[${Y}102${R}] ${C}SALIR DE LA VPS${N}"
-      echo -e " ${R}[${Y}0${R}]   ${C}SALIR${N}"
+    if [ "$v2ray_installed" = true ]; then
+      show_full_menu
+      msg -bar
+      echo ""
+      echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
+      echo -ne "╰─> : ${G}"
+      read -r op
+      echo -ne "${N}"
+      case "${op:-}" in
+        1) run_module "Usuarios/ssh.sh" ;;
+        2) run_module "Usuarios/v2ray.sh" ;;
+        3) run_module "Protocolos/menu.sh" ;;
+        4) run_module "Herramientas/menu.sh" ;;
+        5) banner_ssh_menu ;;
+        6) run_module "Sistema/puertos.sh" ;;
+        7) run_module "Herramientas/speedtest.sh" ;;
+        99)  reboot_vps ;;
+        100) desinstalador_script ;;
+        101) update_script ;;
+        102) exit_vps ;;
+        0)   exit_script ;;
+        *)   echo -e "${R} Opción inválida${N}"; sleep 1 ;;
+      esac
     else
-      # MENÚ SIN V2RAY
-      echo -e " ${R}[${Y}1${R}]  ${C}USUARIOS SSH          ${R}[${Y}4${R}]  ${C}BANNER SSH${N}"
-      echo -e " ${R}[${Y}2${R}]  ${C}PROTOCOLOS            ${R}[${Y}5${R}]  ${C}ADMINISTRAR PUERTOS${N}"
-      echo -e " ${R}[${Y}3${R}]  ${C}HERRAMIENTAS          ${R}[${Y}6${R}]  ${C}SPEEDTEST${N}"
-      msg -bar3
-      echo -e " ${R}[${Y}99${R}]  ${C}REBOOT VPS            ${R}[${Y}100${R}] ${C}DESINSTALAR SCRIPT${N}"
-      echo -e " ${R}[${Y}101${R}] ${C}ACTUALIZAR SCRIPT     ${R}[${Y}102${R}] ${C}SALIR DE LA VPS${N}"
-      echo -e " ${R}[${Y}0${R}]   ${C}SALIR${N}"
+      show_no_v2ray_menu
+      msg -bar
+      echo ""
+      echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
+      echo -ne "╰─> : ${G}"
+      read -r op
+      echo -ne "${N}"
+      case "${op:-}" in
+        1) run_module "Usuarios/ssh.sh" ;;
+        2) run_module "Protocolos/menu.sh" ;;
+        3) run_module "Herramientas/menu.sh" ;;
+        4) banner_ssh_menu ;;
+        5) run_module "Sistema/puertos.sh" ;;
+        6) run_module "Herramientas/speedtest.sh" ;;
+        99)  reboot_vps ;;
+        100) desinstalador_script ;;
+        101) update_script ;;
+        102) exit_vps ;;
+        0)   exit_script ;;
+        *)   echo -e "${R} Opción inválida${N}"; sleep 1 ;;
+      esac
     fi
-
-    msg -bar
-    echo ""
-    echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
-    echo -ne "╰─> : ${G}"
-    read -r op
-    echo -ne "${N}"
-
-    case "${op:-}" in
-      1) run_module "Usuarios/ssh.sh" ;;
-      2) if $v2ray_installed; then run_module "Usuarios/v2ray.sh"; else run_module "Protocolos/menu.sh"; fi ;;
-      3) if $v2ray_installed; then run_module "Protocolos/menu.sh"; else run_module "Herramientas/menu.sh"; fi ;;
-      4) if $v2ray_installed; then run_module "Herramientas/menu.sh"; else banner_ssh_menu; fi ;;
-      5) if $v2ray_installed; then banner_ssh_menu; else run_module "Sistema/puertos.sh"; fi ;;
-      6) if $v2ray_installed; then run_module "Sistema/puertos.sh"; else run_module "Herramientas/speedtest.sh"; fi ;;
-      7) run_module "Herramientas/speedtest.sh" ;;
-      99)  reboot_vps ;;
-      100) desinstalador_script ;;
-      101) update_script ;;
-      102) exit_vps ;;
-      0)   exit_script ;;
-      *)   echo -e "${R} Opción inválida${N}"; sleep 1 ;;
-    esac
   done
 }
 
-# --- ARRANQUE ---
+# --- EJECUCIÓN ---
+trap exit_script SIGINT SIGTERM
 check_license
 require_root
 main_menu
