@@ -485,67 +485,12 @@ exit_script() {
 }
 
 # ── Menú principal ──────────────────────────────────────
-#!/bin/bash
-# =========================================================
-# SinNombre v3.4 - MENÚ PRINCIPAL (Auto-Color Edition)
-# =========================================================
-
-# 1. Carga inicial de la librería
-source /root/SN/lib/colores.sh 2>/dev/null || true
-
-# 2. Ruta del archivo de configuración de tema
-CONFIG_TEMA="/root/SN/lib/tema.conf"
-
-# --- TUS FUNCIONES DE MÓDULOS ---
-run_module() {
-  local script_path="/root/SN/$1"
-  if [[ -f "$script_path" ]]; then
-    chmod +x "$script_path"
-    bash "$script_path"
-  else
-    echo -e "${R} Error: No se encontró el archivo $1${N}"
-    sleep 2
-  fi
-}
-
-# --- FUNCIÓN PRINCIPAL CON AUTO-ACTUALIZACIÓN ---
-#!/bin/bash
-
-# ─── FUNCIÓN PARA MOSTRAR MENÚ CON V2RAY ──────────────
-show_full_menu() {
-    msg -bar
-    echo -e "${W}                MENU PRINCIPAL (V2Ray Detectado)${N}"
-    msg -bar
-    echo -e " ${R}[${Y}1${R}]  ${C}USUARIOS SSH          ${R}[${Y}5${R}]  ${C}BANNER SSH${N}"
-    echo -e " ${R}[${Y}2${R}]  ${C}USUARIOS V2RAY        ${R}[${Y}6${R}]  ${C}ADMINISTRAR PUERTOS${N}"
-    echo -e " ${R}[${Y}3${R}]  ${C}INSTALADORES          ${R}[${Y}7${R}]  ${C}SPEEDTEST${N}"
-    echo -e " ${R}[${Y}4${R}]  ${C}HERRAMIENTAS${N}"
-    msg -bar3
-    echo -e " ${R}[${Y}99${R}]  ${C}REBOOT VPS            ${R}[${Y}100${R}] ${C}DESINSTALAR SCRIPT${N}"
-    echo -e " ${R}[${Y}101${R}] ${C}ACTUALIZAR SCRIPT     ${R}[${Y}102${R}] ${C}SALIR DE LA VPS${N}"
-    echo -e " ${R}[${Y}0${R}]   ${C}SALIR${N}"
-}
-
-# ─── FUNCIÓN PARA MOSTRAR MENÚ SIN V2RAY ──────────────
-show_no_v2ray_menu() {
-    msg -bar
-    echo -e "${W}                MENU PRINCIPAL${N}"
-    msg -bar
-    echo -e " ${R}[${Y}1${R}]  ${C}USUARIOS SSH          ${R}[${Y}4${R}]  ${C}BANNER SSH${N}"
-    echo -e " ${R}[${Y}2${R}]  ${C}PROTOCOLOS            ${R}[${Y}5${R}]  ${C}ADMINISTRAR PUERTOS${N}"
-    echo -e " ${R}[${Y}3${R}]  ${C}HERRAMIENTAS          ${R}[${Y}6${R}]  ${C}SPEEDTEST${N}"
-    msg -bar3
-    echo -e " ${R}[${Y}99${R}]  ${C}REBOOT VPS            ${R}[${Y}100${R}] ${C}DESINSTALAR SCRIPT${N}"
-    echo -e " ${R}[${Y}101${R}] ${C}ACTUALIZAR SCRIPT     ${R}[${Y}102${R}] ${C}SALIR DE LA VPS${N}"
-    echo -e " ${R}[${Y}0${R}]   ${C}SALIR${N}"
-}
-
 # ─── MENÚ PRINCIPAL CON AUTO-ACTUALIZACIÓN ────────────
 main_menu() {
   while true; do
     # Recarga de colores dinámica
     source /root/SN/lib/colores.sh 2>/dev/null
-    
+
     clear_screen
 
     # Lógica de detección de V2Ray/Xray
@@ -562,9 +507,8 @@ main_menu() {
     show_services_status
     show_system_status
 
-    if [ "$v2ray_installed" = true ]; then
+    if $v2ray_installed; then
       show_full_menu
-      msg -bar
       echo ""
       echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
       echo -ne "╰─> : ${G}"
@@ -583,11 +527,10 @@ main_menu() {
         101) update_script ;;
         102) exit_vps ;;
         0)   exit_script ;;
-        *)   echo -e "${R} Opción inválida${N}"; sleep 1 ;;
+        *)   invalid_option ;;
       esac
     else
       show_no_v2ray_menu
-      msg -bar
       echo ""
       echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
       echo -ne "╰─> : ${G}"
@@ -605,15 +548,14 @@ main_menu() {
         101) update_script ;;
         102) exit_vps ;;
         0)   exit_script ;;
-        *)   echo -e "${R} Opción inválida${N}"; sleep 1 ;;
+        *)   invalid_option ;;
       esac
     fi
   done
 }
 
-# --- EJECUCIÓN ---
 trap exit_script SIGINT SIGTERM
+
 check_license
 require_root
 main_menu
-
