@@ -58,4 +58,3 @@ while true; do
       *) echo -e "${R} Opción inválida${N}"; sleep 1 ;;
     esac
 done
-
