@@ -3,14 +3,66 @@
 # SinNombre v2.1 - Menú de Herramientas (Ubuntu 22.04+)
 # =========================================================
 
-# 1. Cargar colores (Ruta absoluta para evitar errores)
-source /root/SN/lib/colores.sh 2>/dev/null || true
+# ------------------------------------------------------------------
+# 1. Carga robusta de la librería de colores (funciona en /root/SN o /etc/SN)
+# ------------------------------------------------------------------
+find_colores() {
+    local posibles=(
+        "/root/SN/lib/colores.sh"
+        "/etc/SN/lib/colores.sh"
+        "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/colores.sh"
+        "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/colores.sh"
+    )
+    for path in "${posibles[@]}"; do
+        if [[ -f "$path" ]]; then
+            echo "$path"
+            return 0
+        fi
+    done
+    return 1
+}
 
+LIB_COLORES=$(find_colores)
+if [[ -f "$LIB_COLORES" ]]; then
+    source "$LIB_COLORES"
+else
+    # Fallback: definimos las funciones mínimas necesarias (colores básicos)
+    R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
+    M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
+    BOLD='\033[1m'
+    hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
+    sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
+    step() { printf " ${C}•${N} ${W}%s${N} " "$1"; }
+    ok()   { echo -e "${G}[OK]${N}"; }
+    fail() { echo -e "${R}[FAIL]${N}"; }
+    pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
+    clear_screen() { clear; }
+    msg() {
+        case "$1" in
+            -bar)   hr ;;
+            -bar3)  sep ;;
+            -azu)   shift; echo -e "${C}$*${N}" ;;
+            -verd)  shift; echo -e "${G}$*${N}" ;;
+            -verm)  shift; echo -e "${R}$*${N}" ;;
+            -ama)   shift; echo -e "${Y}$*${N}" ;;
+            *)      echo -e "$*" ;;
+        esac
+    }
+    title() { clear_screen; hr; echo -e "${W}    $* ${N}"; hr; }
+    print_center() { echo -e "$*"; }
+    enter() { echo ""; read -r -p " Presione ENTER para continuar"; }
+    del() { local lines="${1:-1}"; for ((i=0;i<lines;i++)); do tput cuu1 2>/dev/null; tput el 2>/dev/null; done; }
+fi
+
+# ------------------------------------------------------------------
 # 2. Variables de entorno
+# ------------------------------------------------------------------
 VPS_src="/etc/SN"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 3. Funciones del menú
+# ------------------------------------------------------------------
+# 3. Funciones del menú (pueden estar definidas aquí o en módulos externos)
+# ------------------------------------------------------------------
 run_module() {
   local script_name="$1"
   local script_path="$2/$script_name"
@@ -22,9 +74,53 @@ run_module() {
   fi
 }
 
-# (Otras funciones: clean_cache, update_system, etc... se mantienen igual)
+# Funciones de herramientas (si no están definidas en otro lugar, se implementan aquí)
+clean_cache() {
+    # Limpia caché del sistema (ejemplo)
+    echo -e "${Y}Limpiando caché...${N}"
+    sync && echo 3 > /proc/sys/vm/drop_caches
+    echo -e "${G}Caché limpiada.${N}"
+    pause
+}
 
-# 4. Bucle del Menú
+restart_services() {
+    # Reinicia servicios comunes
+    echo -e "${Y}Reiniciando servicios...${N}"
+    systemctl restart sshd 2>/dev/null || true
+    systemctl restart dropbear 2>/dev/null || true
+    systemctl restart stunnel4 2>/dev/null || true
+    systemctl restart squid 2>/dev/null || true
+    echo -e "${G}Servicios reiniciados.${N}"
+    pause
+}
+
+update_system() {
+    echo -e "${Y}Actualizando sistema...${N}"
+    apt update && apt upgrade -y
+    echo -e "${G}Sistema actualizado.${N}"
+    pause
+}
+
+change_root_pass() {
+    echo -e "${Y}Cambiando contraseña de root...${N}"
+    passwd root
+    pause
+}
+
+configure_domain() {
+    echo -e "${Y}Configurar dominio (ejemplo: editar /etc/hosts)${N}"
+    echo -e "${C}Ingresa el dominio deseado:${N}"
+    read -r dominio
+    if [[ -n "$dominio" ]]; then
+        echo "$(hostname -I | awk '{print $1}') $dominio" >> /etc/hosts
+        echo -e "${G}Dominio $dominio agregado a /etc/hosts.${N}"
+    fi
+    pause
+}
+
+# ------------------------------------------------------------------
+# 4. Bucle principal del menú
+# ------------------------------------------------------------------
 while true; do
     clear_screen
     msg -bar
@@ -49,10 +145,15 @@ while true; do
       5|05) change_root_pass ;;
       6|06) configure_domain ;;
       7|07) run_module "zonahora.sh" "$ROOT_DIR" ;;
-      # --- EL SECRETO DEL CAMBIO INSTANTÁNEO ---
-      8|08) 
+      8|08)
+        # Ejecuta el selector de temas y recarga colores para aplicar cambios
         run_module "menucolor.sh" "$ROOT_DIR"
-        source /root/SN/lib/colores.sh # Recarga los colores al volver
+        # Recarga la librería completa (puede que haya cambiado el tema)
+        if [[ -f "$LIB_COLORES" ]]; then
+            source "$LIB_COLORES"
+        else
+            echo -e "${R}No se pudo recargar colores, se mantiene el fallback.${N}"
+        fi
         ;;
       0|00) exit 0 ;;
       *) echo -e "${R} Opción inválida${N}"; sleep 1 ;;
