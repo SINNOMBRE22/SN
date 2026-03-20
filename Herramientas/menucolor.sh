@@ -1,6 +1,7 @@
 #!/bin/bash
 # =========================================================
-# SN Plus - SELECTOR DE 30 TEMAS (Versión Portable)
+# SN Plus - SELECTOR DE 30 TEMAS (Versión ANSI)
+# Compatible con JuiceSSH y terminales básicas
 # =========================================================
 
 # ------------------------------------------------------------------
@@ -20,7 +21,6 @@ else
     hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
     sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
     clear_screen() { clear; }
-    # Crear directorio por defecto para guardar el tema
     LIB_DIR="/etc/SN/lib"
     mkdir -p "$LIB_DIR"
 fi
@@ -31,20 +31,41 @@ fi
 CONFIG_TEMA="$LIB_DIR/tema.conf"
 
 # ------------------------------------------------------------------
-# 3. Definición de 30 Temas RGB y sus nombres
+# 3. Definición de 30 Temas ANSI (colores estándar)
 # ------------------------------------------------------------------
 declare -A T
-T[1]='\033[38;2;255;0;0m';      T[2]='\033[38;2;0;255;0m';        T[3]='\033[38;2;0;100;255m'
-T[4]='\033[38;2;0;255;255m';    T[5]='\033[38;2;255;215;0m';      T[6]='\033[38;2;255;20;147m'
-T[7]='\033[38;2;148;0;211m';    T[8]='\033[38;2;255;69;0m';       T[9]='\033[38;2;0;255;127m'
-T[10]='\033[38;2;255;105;180m'; T[11]='\033[38;2;173;255;47m';    T[12]='\033[38;2;240;230;140m'
-T[13]='\033[38;2;224;224;224m'; T[14]='\033[38;2;105;105;105m';   T[15]='\033[38;2;0;0;255m'
-T[16]='\033[38;2;128;0;0m';     T[17]='\033[38;2;0;128;128m';     T[18]='\033[38;2;75;0;130m'
-T[19]='\033[38;2;218;165;32m';  T[20]='\033[38;2;0;206;209m';     T[21]='\033[38;2;255;160;122m'
-T[22]='\033[38;2;124;252;0m';   T[23]='\033[38;2;255;255;255m';   T[24]='\033[38;2;30;144;255m'
-T[25]='\033[38;2;139;69;19m';   T[26]='\033[38;2;255;140;0m';     T[27]='\033[38;2;152;251;152m'
-T[28]='\033[38;2;221;160;221m'; T[29]='\033[38;2;70;130;180m';    T[30]='\033[38;2;30;30;30m'
+T[1]='\033[0;31m'     # Rojo
+T[2]='\033[0;32m'     # Verde
+T[3]='\033[0;34m'     # Azul
+T[4]='\033[0;36m'     # Cian
+T[5]='\033[1;33m'     # Amarillo (oro)
+T[6]='\033[0;35m'     # Magenta (rosa)
+T[7]='\033[1;35m'     # Magenta brillante (viola)
+T[8]='\033[1;31m'     # Rojo brillante (naranja)
+T[9]='\033[0;32m'     # Verde (spring)
+T[10]='\033[1;31m'    # Rojo brillante (hotpink)
+T[11]='\033[0;32m'    # Verde lima
+T[12]='\033[1;33m'    # Amarillo kaki
+T[13]='\033[1;37m'    # Blanco nieve
+T[14]='\033[0;37m'    # Gris
+T[15]='\033[0;34m'    # Azul (bluep)
+T[16]='\033[0;31m'    # Rojo bordó
+T[17]='\033[0;36m'    # Cian teal
+T[18]='\033[0;35m'    # Magenta índigo
+T[19]='\033[1;33m'    # Amarillo oro
+T[20]='\033[0;36m'    # Cian turquesa
+T[21]='\033[1;31m'    # Rojo salmón
+T[22]='\033[0;32m'    # Verde lawn
+T[23]='\033[1;37m'    # Blanco puro
+T[24]='\033[0;34m'    # Azul dodger
+T[25]='\033[1;31m'    # Rojo saddle
+T[26]='\033[1;31m'    # Rojo dark orange
+T[27]='\033[0;32m'    # Verde palegreen
+T[28]='\033[1;35m'    # Magenta plum
+T[29]='\033[0;34m'    # Azul steel
+T[30]='\033[0;30m'    # Negro (black)
 
+# Nombres de los temas (coincidentes)
 N=("" "Rojo" "Verde" "Azul" "Cian" "Oro" "Rosa" "Viola" "Naranja" "Spring" "HotPk" "Lima" "Kaki" "Nieve" "Gris" "BlueP" "Bord" "Teal" "Indig" "Gold" "Turq" "Salmon" "Lawn" "PureW" "Dodger" "Saddle" "DarkOr" "PalGr" "Plum" "Steel" "Black")
 
 # ------------------------------------------------------------------
@@ -69,7 +90,7 @@ while true; do
     read -r opt
     [[ "$opt" == "0" ]] && break
     if [[ -n "${T[$opt]:-}" ]]; then
-        # Guardar color en el archivo de configuración
+        # Guardar color en el archivo de configuración (código ANSI)
         echo "L_COLOR='${T[$opt]}'" > "$CONFIG_TEMA"
         # Aplicar el color en la sesión actual para que se vea de inmediato
         L_COLOR="${T[$opt]}"

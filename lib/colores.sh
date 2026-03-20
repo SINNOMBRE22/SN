@@ -1,31 +1,27 @@
 #!/bin/bash
 # =========================================================
-# SN Plus - LIBRERÍA CENTRAL DE INTERFAZ (V2.3)
-# Versión portable (detecta su propia ubicación)
+# SN Plus - LIBRERÍA CENTRAL DE INTERFAZ (ANSI)
+# Compatible con JuiceSSH y terminales básicas
 # =========================================================
 
 # --- 0. DETECCIÓN DE UBICACIÓN DE LA LIBRERÍA ---
-# Obtiene el directorio donde se encuentra este script
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# La raíz del panel es un nivel superior a lib
 ROOT_PANEL="$(dirname "$LIB_DIR")"
-
-# Archivo de configuración del tema (debe estar en el mismo directorio que la librería)
 CONFIG_TEMA="$LIB_DIR/tema.conf"
 
-# --- 1. COLORES BASE PARA TEXTO ---
+# --- 1. COLORES BASE ANSI (16 colores estándar) ---
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
 M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
 BOLD='\033[1m'; D='\033[2m'
 
-# --- 2. CARGA DEL TEMA DINÁMICO ---
+# --- 2. CARGA DEL TEMA DINÁMICO (debe ser un código ANSI) ---
 if [[ -f "$CONFIG_TEMA" ]]; then
     source "$CONFIG_TEMA"
 else
-    L_COLOR='\033[38;2;0;255;255m' # Cian por defecto
+    L_COLOR="$C"   # Cian por defecto (ANSI)
 fi
 
-# --- 3. FUNCIONES DE DIBUJO (usando L_COLOR del tema) ---
+# --- 3. FUNCIONES DE DIBUJO (usando L_COLOR) ---
 hr()  { echo -e "${L_COLOR}══════════════════════════ / / / ══════════════════════════${N}"; }
 sep() { echo -e "${L_COLOR}──────────────────────────────────────────────────────────${N}"; }
 clear_screen() { clear; }
@@ -45,7 +41,7 @@ require_root() {
   fi
 }
 
-# --- 5. FUNCIÓN MSG COMPLETA (estilo v2ray/Rufu) ---
+# --- 5. FUNCIÓN MSG COMPLETA ---
 msg() {
   case "$1" in
     -bar)   hr ;;
@@ -61,7 +57,7 @@ msg() {
   esac
 }
 
-# --- 6. FUNCIÓN PRINT_CENTER (con color, sin centrado real por compatibilidad) ---
+# --- 6. FUNCIÓN PRINT_CENTER (simple, sin centrado) ---
 print_center() {
   case "$1" in
     -blu)   shift; echo -e "${C}$*${N}" ;;
@@ -72,7 +68,7 @@ print_center() {
   esac
 }
 
-# --- 7. FUNCIÓN TITLE (título con líneas) ---
+# --- 7. FUNCIÓN TITLE ---
 title() {
   clear_screen
   hr
@@ -80,13 +76,13 @@ title() {
   hr
 }
 
-# --- 8. FUNCIÓN ENTER (pausa con mensaje) ---
+# --- 8. FUNCIÓN ENTER ---
 enter() {
   echo ""
   read -r -p " Presione ENTER para continuar"
 }
 
-# --- 9. FUNCIÓN DEL (borra líneas del terminal) ---
+# --- 9. FUNCIÓN DEL ---
 del() {
   local lines="${1:-1}"
   for ((i = 0; i < lines; i++)); do
@@ -95,9 +91,8 @@ del() {
   done
 }
 
-# --- 10. FUNCIONES AUXILIARES PARA MÓDULOS (opcionales) ---
+# --- 10. FUNCIONES AUXILIARES ---
 back_to_main() {
-  # Usa la raíz del panel detectada automáticamente
   local root="${1:-$ROOT_PANEL}"
   [[ -f "${root}/menu" ]] && bash "${root}/menu" || exit 0
 }
@@ -116,7 +111,6 @@ run_proto() {
   fi
 }
 
-# --- 11. EJECUTAR MÓDULO CON VALIDACIÓN (del original) ---
 run_module() {
   local base_dir="${2:-$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)}"
   local rel="$1"

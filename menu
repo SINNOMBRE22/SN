@@ -104,6 +104,19 @@ run_module() {
     chmod +x "$path"
     bash "$path"
     clear_screen
+
+    # Recargar colores y tema (forzar actualización)
+    # 1. Si existe el archivo de configuración del tema, leerlo
+    if [[ -f "$ROOT_DIR/lib/tema.conf" ]]; then
+        source "$ROOT_DIR/lib/tema.conf"
+    fi
+    # 2. Si la librería existe, recargarla (esto redefinirá hr, sep, etc.)
+    if [[ -f "$ROOT_DIR/lib/colores.sh" ]]; then
+        source "$ROOT_DIR/lib/colores.sh"
+    else
+        # Si no, usar fallback (pero en tu caso debería existir)
+        L_COLOR="${L_COLOR:-$C}"
+    fi
   else
     echo
     echo -e "${Y}Módulo no disponible:${N} ${C}${rel}${N}"
@@ -112,7 +125,6 @@ run_module() {
     pause
   fi
 }
-
 # ═══════════════════════════════════════════════════════
 #  SERVICIOS / PUERTOS  ─ VERSIÓN OPTIMIZADA
 # ═══════════════════════════════════════════════════════
