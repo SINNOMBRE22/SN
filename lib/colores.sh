@@ -1,10 +1,17 @@
 #!/bin/bash
 # =========================================================
-# SN Plus - LIBRERÍA CENTRAL DE INTERFAZ (V2.2)
-# Fusionada con funciones completas (title, print_center, etc.)
+# SN Plus - LIBRERÍA CENTRAL DE INTERFAZ (V2.3)
+# Versión portable (detecta su propia ubicación)
 # =========================================================
 
-CONFIG_TEMA="/root/SN/lib/tema.conf"
+# --- 0. DETECCIÓN DE UBICACIÓN DE LA LIBRERÍA ---
+# Obtiene el directorio donde se encuentra este script
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# La raíz del panel es un nivel superior a lib
+ROOT_PANEL="$(dirname "$LIB_DIR")"
+
+# Archivo de configuración del tema (debe estar en el mismo directorio que la librería)
+CONFIG_TEMA="$LIB_DIR/tema.conf"
 
 # --- 1. COLORES BASE PARA TEXTO ---
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
@@ -90,7 +97,8 @@ del() {
 
 # --- 10. FUNCIONES AUXILIARES PARA MÓDULOS (opcionales) ---
 back_to_main() {
-  local root="${1:-/etc/SN}"
+  # Usa la raíz del panel detectada automáticamente
+  local root="${1:-$ROOT_PANEL}"
   [[ -f "${root}/menu" ]] && bash "${root}/menu" || exit 0
 }
 
