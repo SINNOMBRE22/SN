@@ -1,0 +1,556 @@
+#!/bin/bash
+set -uo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# =========================================================
+# SinNombre v2.0 - Panel CLI (Ubuntu 22.04+)
+# Creador: @SIN_NOMBRE22
+# =========================================================
+
+# ── Cargar colores desde lib ────────────────────────────
+# ------------------------------------------------------------------
+# 1. Búsqueda dinámica de la librería de colores
+LIB_COLORES="$ROOT_DIR/lib/colores.sh"
+LIB_COLORES="$ROOT_DIR/etc/lib/colores.sh"
+if [[ -f "$LIB_COLORES" ]]; then
+  source "$LIB_COLORES"
+else
+  # Fallback: definir colores inline
+  R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[0;34m'
+  M='\033[0;35m'; C='\033[0;36m'; W='\033[1;37m'; N='\033[0m'
+  BOLD='\033[1m'
+  hr()  { echo -e "${R}══════════════════════════ / / / ══════════════════════════${N}"; }
+#  sep() { echo -e "${R}──────────────────────────────────────────────────────────${N}"; }
+  step() { printf " ${C}•${N} ${W}%s${N} " "$1"; }
+  ok()   { echo -e "${G}[OK]${N}"; }
+  fail() { echo -e "${R}[FAIL]${N}"; }
+  pause() { echo ""; read -r -p "Presiona Enter para continuar..."; }
+  clear_screen() { clear; }
+fi
+
+# ── Licencia ────────────────────────────────────────────
+LIC_DIR="/etc/.sn"
+LIC_PATH="${LIC_DIR}/lic"
+MY_DEV_IP="67.217.244.52"
+
+# ── Utilidades ──────────────────────────────────────────
+cmd_timeout() {
+  local seconds="$1"; shift
+  timeout "$seconds" bash -c "$*" 2>/dev/null
+}
+
+get_public_ip() {
+  cmd_timeout 0.2 "curl -fsS https://api.ipify.org" \
+  || cmd_timeout 0.5 "curl -fsS ifconfig.me" \
+  || echo "No disponible"
+}
+
+# ── Licencia ────────────────────────────────────────────
+license_box() {
+  clear
+  hr
+  echo -e "${Y}${BOLD}LICENCIA NO VÁLIDA / NO ENCONTRADA${N}"
+  hr
+  echo ""
+  echo -e "${W}Este servidor no está activado.${N}"
+  echo -e "${W}Ejecuta el instalador e ingresa una key válida.${N}"
+  echo ""
+  exit 1
+}
+
+check_license() {
+  local my_ip
+  my_ip="$(get_public_ip)"
+  if [[ -n "$my_ip" && "$my_ip" == "$MY_DEV_IP" ]]; then
+    return 0
+  fi
+  [[ -f "$LIC_PATH" ]] || license_box
+}
+
+# ── Requisitos ──────────────────────────────────────────
+require_root() {
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    clear_screen
+    hr
+    echo -e "${Y}Este panel debe ejecutarse como root.${N}"
+    echo -e "${W}Usa:${N} ${C}sudo menu${N}  ${W}o${N}  ${C}sudo sn${N}"
+    hr
+    exit 1
+  fi
+}
+
+# ── Módulos ─────────────────────────────────────────────
+run_module() {
+  local rel="$1"
+  local path="$ROOT_DIR/$rel"
+
+  if [[ -f "$path" ]]; then
+    chmod +x "$path"
+    bash "$path"
+    clear_screen
+  else
+    echo
+    echo -e "${Y}Módulo no disponible:${N} ${C}${rel}${N}"
+    echo -e "${Y}Ruta esperada:${N} $path"
+    echo -e "${Y}Estado:${N} En desarrollo..."
+    pause
+  fi
+}
+
+# ═══════════════════════════════════════════════════════
+#  SERVICIOS / PUERTOS  ─ VERSIÓN OPTIMIZADA
+# ═══════════════════════════════════════════════════════
+#
+# Problema anterior: se hacían ~15 cmd_timeout secuenciales
+# (grep config, systemctl, jq, ss, etc.) cada uno con hasta
+# 0.5 s de espera. Ahora se hace UNA SOLA llamada a ss y
+# se lee cada config solo si el servicio está corriendo.
+# Todo en <0.3 s en el peor caso.
+# ═══════════════════════════════════════════════════════
+
+_build_services_cache() {
+  # 1) Capturar TODOS los sockets
+  local ss_output
+  ss_output="$(ss -Hlntup 2>/dev/null)" || ss_output=""
+
+  # 2) Armar un array asociativo
+  declare -A svc_ports=()
+
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+
+    # EXTRAER COLUMNAS NATIVAMENTE (Sin awk)
+    # ss output: Netid  State  Recv-Q Send-Q  LocalAddress:Port  PeerAddress:Port  Process
+    read -r netid state recv send local_addr peer rest <<< "$line"
+
+    # Detectar protocolo (Sin grep)
+    local proto="TCP"
+    [[ "$netid" == udp* || "$netid" == UNCONN* || "$state" == UNCONN* ]] && proto="UDP"
+
+    # Extraer puerto (Sin awk)
+    local port="${local_addr##*:}"
+    [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]] && continue
+
+    # Extraer nombre del proceso (Sin sed, usando Regex nativo de Bash)
+    local proc=""
+    if [[ "$rest" =~ users:\(\(\"([^\"]+)\" ]]; then
+      proc="${BASH_REMATCH[1]}"
+    fi
+    [[ -z "$proc" ]] && continue
+
+    # Normalizar nombre del servicio (Tu lógica exacta)
+    local svc_name=""
+    case "$proc" in
+      sshd)              svc_name="SSH" ;;
+      dropbear)          svc_name="Dropbear" ;;
+      v2ray)             svc_name="V2Ray" ;;
+      xray)              svc_name="Xray" ;;
+      squid|squid3)      svc_name="Squid" ;;
+      stunnel|stunnel4)  svc_name="Stunnel" ;;
+      openvpn)           svc_name="OpenVPN" ;;
+      badvpn-udpgw)      svc_name="BadVPN" ;;
+      python3|python)    svc_name="Python" ;;
+      nginx)             svc_name="Nginx" ;;
+      apache2|httpd)     svc_name="Apache" ;;
+      node)              svc_name="Node.js" ;;
+      udp-custom|udpgw)  svc_name="UDP-Custom" ;;
+      wireguard-go|wg)   svc_name="WireGuard" ;;
+      *)                 svc_name="$proc" ;;
+    esac
+
+    # Saltar puertos UDP dinámicos
+    if [[ "$proto" == "UDP" && ("$svc_name" == "V2Ray" || "$svc_name" == "Xray" || "$svc_name" == "BadVPN") ]]; then
+      continue
+    fi
+
+    local port_label="$port"
+    [[ "$proto" == "UDP" ]] && port_label="${port}(UDP)"
+
+    # Agregar al mapa evitando duplicados y LIMITANDO LA CANTIDAD
+    if [[ -z "${svc_ports[$svc_name]:-}" ]]; then
+      svc_ports[$svc_name]="$port_label"
+    elif [[ "${svc_ports[$svc_name]}" != *"$port_label"* ]]; then
+      
+      # Cuenta cuántas comas hay rápido (para saber cuántos puertos van)
+      local current="${svc_ports[$svc_name]}"
+      local comas="${current//[^,]/}" 
+      
+      # Si hay menos de 6 puertos, lo agrega normal. Si hay más, pone "..."
+      if (( ${#comas} < 5 )); then
+        svc_ports[$svc_name]="${current}, $port_label"
+      elif [[ "$current" != *"..."* ]]; then
+        svc_ports[$svc_name]="${current}, ..."
+      fi
+    fi
+  done <<< "$ss_output"
+
+  # 3) Agregar WireGuard desde config
+  if [[ -z "${svc_ports[WireGuard]:-}" ]] && ls /etc/wireguard/*.conf &>/dev/null; then
+    local wg_port
+    wg_port="$(grep -hE '^ListenPort' /etc/wireguard/*.conf 2>/dev/null | awk '{print $3}' | head -1)"
+    [[ -n "$wg_port" ]] && svc_ports["WireGuard"]="${wg_port}(UDP)"
+  fi
+
+  # 4) Convertir a texto plano
+  _SERVICES_CACHE=""
+  for svc in "${!svc_ports[@]}"; do
+    _SERVICES_CACHE+="${svc}=${svc_ports[$svc]}"$'\n'
+  done
+}
+
+show_services_status() {
+  hr
+  echo -e "${W}                   SERVICIOS ACTIVOS${N}"
+  hr
+
+  # Construir cache (una sola vez, ~0.1 s)
+  _build_services_cache
+
+  if [[ -z "$_SERVICES_CACHE" ]]; then
+    echo -e "${Y}No se encontraron servicios activos con puertos.${N}"
+    hr
+    echo ""
+    return 0
+  fi
+
+  # Leer lineas en un array
+  local -a lines=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && lines+=("$line")
+  done <<< "$_SERVICES_CACHE"
+
+  local count="${#lines[@]}"
+  local half=$(( (count + 1) / 2 ))
+
+  # ── Anchos fijos para alinear las dos columnas ──
+  # COL_NAME  = ancho reservado para el nombre del servicio (ej: "SSH", "WireGuard")
+  # COL_TOTAL = ancho total de la columna izquierda (nombre + ": " + puertos)
+  local COL_NAME=2
+  local COL_TOTAL=28
+
+  for ((i = 0; i < half; i++)); do
+    local left="${lines[$i]}"
+    local left_svc="${left%%=*}"
+    local left_ports="${left#*=}"
+
+    # Columna izquierda: nombre con ancho fijo + ": " + puertos
+    # Luego se rellena hasta COL_TOTAL para que la columna derecha arranque igual
+    local left_plain
+    left_plain="$(printf "%-${COL_NAME}s: %s" "$left_svc" "$left_ports")"
+    printf "${C}%-${COL_NAME}s${W}: ${G}%s${N}" "$left_svc" "$left_ports"
+
+    # Padding hasta COL_TOTAL caracteres (basado en texto plano sin colores)
+    local left_len="${#left_plain}"
+    local pad=$(( COL_TOTAL - left_len ))
+    (( pad > 0 )) && printf "%${pad}s" ""
+    # Separador entre columnas
+    printf ""
+
+    # Columna derecha
+    local right_idx=$((i + half))
+    if (( right_idx < count )); then
+      local right="${lines[$right_idx]}"
+      local right_svc="${right%%=*}"
+      local right_ports="${right#*=}"
+      printf "${C}%-${COL_NAME}s${W}: ${G}%s${N}" "$right_svc" "$right_ports"
+    fi
+
+    echo ""
+  done
+
+  sep
+}
+
+# ── Info del sistema ────────────────────────────────────
+#show_custom_banner() {
+#  if command -v toilet &>/dev/null; then
+#    echo -e "\e[31m$(toilet -f slant -F metal "KAIZEN")\e[0m"
+#  fi
+#}
+show_custom_banner() {
+  if command -v figlet >/dev/null 2>&1 && command -v lolcat >/dev/null 2>&1; then
+      figlet -f slant "SN - PLUS" | lolcat
+  fi
+}
+
+
+get_system_info() {
+  if [[ -f /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    DISTRO="${PRETTY_NAME:-$(uname -rs)}"
+  else
+    DISTRO="$(uname -rs)"
+  fi
+
+  IP_PUBLICA="$(get_public_ip)"
+  USUARIO="$(whoami)"
+  ZONA_HORARIA="$(timedatectl 2>/dev/null | awk -F': ' '/Time zone/ {print $2}' | awk '{print $1}' || date +%Z)"
+  read -r MEM_TOTAL MEM_USADA MEM_LIBRE <<< "$(free -m | awk '/^Mem:/ {print $2, $3, $7}')"
+
+  DOMINIO=""
+  [[ -f "/etc/SN/dominio.txt" ]] && DOMINIO="$(cat /etc/SN/dominio.txt)"
+
+  SWAP_INFO=""
+  local swap_total
+  swap_total=$(free -m | awk '/^Swap:/ {print $2}')
+  if [[ "$swap_total" -gt 0 ]]; then
+    local swap_used swap_free
+    swap_used=$(free -m | awk '/^Swap:/ {print $3}')
+    swap_free=$(free -m | awk '/^Swap:/ {print $4}')
+    SWAP_INFO="${Y}${swap_total} MB${W} > Uso: ${Y}${swap_used} MB${W} > Libre: ${G}${swap_free} MB${N}"
+  fi
+}
+
+show_banner() {
+  clear_screen
+  get_system_info
+  show_custom_banner
+
+  hr
+  echo -e "${R} ⟪ ${G}● Creado Por SinNombre - SN PLUS v3.4 ●${R} ⟫${N}"
+  sep
+  echo -e "${R} » ${N} ${W}Sistema: ${G}${DISTRO}${N}"
+  echo -e "${R} » ${N} ${W}IP Publica: ${Y}${IP_PUBLICA}${N}"
+  [[ -n "$DOMINIO" ]] && \
+  echo -e "${R} » ${N} ${W}Dominio: ${Y}${DOMINIO}${N}"
+  echo -e "${R} » ${N} ${W}Usuario: ${G}${USUARIO}${N}"
+  echo -e "${R} » ${N} ${W}Zona Horaria: ${Y}${ZONA_HORARIA}${N}"
+  sep
+  echo -e "${R} ⇒ ${N} ${W}Memoria Ram:  ${Y}${MEM_TOTAL} MB${W} > Uso: ${Y}${MEM_USADA} MB${W} > Libre: ${G}${MEM_LIBRE} MB${R} ]${N}"
+  [[ -n "$SWAP_INFO" ]] && \
+  echo -e "${R} ⇒ ${N} ${W}Memoria Swap: ${SWAP_INFO}${R} ]${N}"
+}
+
+show_system_status() {
+  echo -e "${W}                    ESTADO DEL SISTEMA${N}"
+  hr
+  echo -e "${R} ◉ ${N} ${W}Uptime: ${Y}$(uptime -p | sed 's/up //')${N}"
+  echo -e "${R} ◉ ${N} ${W}Espacio disco: ${Y}$(df -h / | awk 'NR==2{print $4}') libre${N}"
+  sep
+}
+
+# ── Menús ───────────────────────────────────────────────
+show_full_menu() {
+  echo -e "${W}                     MENU PRINCIPAL${N}"
+  hr
+  echo -e "${R}[${Y}1${R}]${N}  ${C}USUARIOS SSH${N}             ${R}[${Y}5${R}]${N}  ${C}BANNER SSH${N}"
+  echo -e "${R}[${Y}2${R}]${N}  ${C}USUARIOS V2RAY${N}           ${R}[${Y}6${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
+  echo -e "${R}[${Y}3${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}7${R}]${N}  ${C}SPEEDTEST${N}"
+  echo -e "${R}[${Y}4${R}]${N}  ${C}HERRAMIENTAS${N}"
+  sep
+  echo -e "${R}[${Y}99${R}]${N}  ${C}REBOOT VPS${N}              ${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}"
+  echo -e "${R}[${Y}101${R}]${N} ${C}ACTUALIZAR SCRIPT${N}       ${R}[${Y}102${R}]${N} ${C}SALIR DE LA VPS${N}"
+  echo -e "${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
+  hr
+}
+
+show_no_v2ray_menu() {
+  echo -e "${W}                     MENU PRINCIPAL${N}"
+  hr
+  echo -e "${R}[${Y}1${R}]${N}  ${C}USUARIOS SSH${N}             ${R}[${Y}5${R}]${N}  ${C}ADMINISTRAR PUERTOS${N}"
+  echo -e "${R}[${Y}2${R}]${N}  ${C}INSTALADORES${N}             ${R}[${Y}6${R}]${N}  ${C}SPEEDTEST${N}"
+  echo -e "${R}[${Y}3${R}]${N}  ${C}HERRAMIENTAS${N}"
+  echo -e "${R}[${Y}4${R}]${N}  ${C}BANNER SSH${N}"
+  sep
+  echo -e "${R}[${Y}99${R}]${N}  ${C}REBOOT VPS${N}              ${R}[${Y}100${R}]${N} ${C}DESINSTALAR SCRIPT${N}"
+  echo -e "${R}[${Y}101${R}]${N} ${C}ACTUALIZAR SCRIPT${N}       ${R}[${Y}102${R}]${N} ${C}SALIR DE LA VPS${N}"
+  echo -e "${R}[${Y}0${R}]${N}  ${C}SALIR${N}"
+  hr
+}
+
+banner_ssh_menu() { run_module "Sistema/banner_ssh.sh"; }
+
+# ── Acciones ────────────────────────────────────────────
+reboot_vps() {
+  clear_screen
+  hr
+  echo -e "${Y}                    REINICIAR VPS${N}"
+  hr
+  echo -ne "${Y}¿Estás seguro que deseas reiniciar el VPS? (s/n): ${N}"
+  read -r confirm
+  if [[ "${confirm:-}" =~ ^[sS]$ ]]; then
+    echo -e "${Y}El VPS se reiniciará en 10 segundos...${N}"
+    sleep 10
+    reboot
+    exit 0
+  fi
+}
+
+desinstalador_script() {
+  clear_screen
+  hr
+  echo -e "${W}                  DESINSTALAR COMPLETAMENTE${N}"
+  hr
+
+  echo -e "${Y}¡ATENCION! Esto eliminará:${N}"
+  echo -e "${W}- Archivos y carpetas del Script (menu, sn, Herramientas/, Usuarios/, Protocolos/, Sistema/ ...)"
+  echo -e "- Servicios systemd instalados por SinNombre (v2ray, xray, stunnel4, squid, etc.)"
+  echo -e "- Configuración propia del panel"
+  echo -e "${R}Esta acción es irreversible.${N}"
+  echo ""
+
+  echo -ne "${Y}¿Estás seguro de continuar? (s/n): ${N}"
+  read -r confirm
+  [[ "${confirm:-}" =~ ^[sS]$ ]] || { echo -e "${Y}Cancelado.${N}"; pause; return; }
+
+  for svc in v2ray xray trojan dropbear stunnel4 squid squid3; do
+    if systemctl list-unit-files 2>/dev/null | grep -q "^$svc.service"; then
+      systemctl stop "$svc" 2>/dev/null
+      systemctl disable "$svc" 2>/dev/null
+      rm -f "/etc/systemd/system/$svc.service" "/lib/systemd/system/$svc.service" 2>/dev/null
+    fi
+    pkill -f "$svc" 2>/dev/null || true
+  done
+
+  systemctl daemon-reload
+
+  local script_files=("$ROOT_DIR/menu" "$ROOT_DIR/sn")
+  local script_dirs=("$ROOT_DIR/Herramientas" "$ROOT_DIR/Usuarios" "$ROOT_DIR/Protocolos" "$ROOT_DIR/Sistema")
+  for f in "${script_files[@]}"; do
+    [[ -e "$f" ]] && rm -f "$f"
+  done
+  for d in "${script_dirs[@]}"; do
+    [[ -d "$d" ]] && rm -rf "$d"
+  done
+
+  for bin in sn menu; do
+    [[ -L "/usr/local/bin/$bin" ]] && rm -f "/usr/local/bin/$bin"
+    [[ -f "/usr/local/bin/$bin" ]] && rm -f "/usr/local/bin/$bin"
+  done
+
+  echo -e "${G}Desinstalación completa.${N}"
+  hr
+  echo -e "${Y}El Script y los servicios añadidos han sido eliminados.${N}"
+  echo -e "${W}Puedes cerrar la terminal o reiniciar el VPS.${N}"
+  hr
+  exit 0
+}
+
+update_script() {
+  clear_screen
+  hr
+  echo -e "${W}                ACTUALIZAR SCRIPT${N}"
+  hr
+
+  local updater="$ROOT_DIR/Sistema/updater.sh"
+
+  if [[ -f "$updater" ]]; then
+    chmod +x "$updater"
+    bash "$updater"
+  else
+    echo -e "${Y}Descargando actualizador...${N}"
+    if wget -q -O /tmp/sn_updater.sh "https://raw.githubusercontent.com/SINNOMBRE22/SN/main/Sistema/updater.sh" 2>/dev/null; then
+      chmod +x /tmp/sn_updater.sh
+      bash /tmp/sn_updater.sh
+      rm -f /tmp/sn_updater.sh
+    else
+      echo -e "${Y}No se pudo obtener el actualizador completo.${N}"
+      echo -e "${Y}Usando método básico (solo archivo menu)...${N}"
+      if wget -O /tmp/menu_new "https://raw.githubusercontent.com/SINNOMBRE22/SN/main/menu" 2>/dev/null; then
+        chmod +x /tmp/menu_new
+        cp /tmp/menu_new "$ROOT_DIR/menu"
+        chmod +x "$ROOT_DIR/menu"
+        echo -e "${G}Script actualizado (solo menú).${N}"
+        echo -e "${Y}Para actualización completa, reinstala el panel.${N}"
+      else
+        echo -e "${R}Error al descargar la actualización.${N}"
+      fi
+    fi
+  fi
+
+  pause
+}
+
+exit_vps() {
+  echo -e "${Y}Cerrando conexión...${N}"
+  # Mata el proceso padre (Bash) de forma inmediata
+  kill -9 $PPID
+}
+
+
+invalid_option() {
+  clear_screen
+  hr
+  echo -e "${B}                   OPCION INVALIDA${N}"
+  hr
+  sleep 2
+}
+
+exit_script() {
+  clear_screen
+  hr
+  echo -e "${Y}              Saliendo de SN-PLUS...${N}"
+  echo -e "${G}           ¡CONTACTO t.me/SIN_NOMBRE22!${N}"
+  hr
+  exit 0
+}
+
+# ── Menú principal ──────────────────────────────────────
+main_menu() {
+  while true; do
+    local v2ray_installed=false
+    if systemctl is-active --quiet v2ray 2>/dev/null \
+    || systemctl is-active --quiet xray 2>/dev/null \
+    || [[ -f /etc/v2ray/config.json ]] \
+    || [[ -f /usr/local/etc/xray/config.json ]]; then
+      v2ray_installed=true
+    fi
+
+    show_banner
+    show_services_status
+    show_system_status
+
+    if $v2ray_installed; then
+      show_full_menu
+      echo ""
+      echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
+      echo -ne "╰─> : ${G}"
+      read -r op
+      echo -ne "${N}"
+      case "${op:-}" in
+        1) run_module "Usuarios/ssh.sh" ;;
+        2) run_module "Usuarios/v2ray.sh" ;;
+        3) run_module "Protocolos/menu.sh" ;;
+        4) run_module "Herramientas/menu.sh" ;;
+        5) banner_ssh_menu ;;
+        6) run_module "Sistema/puertos.sh" ;;
+        7) run_module "Herramientas/speedtest.sh" ;;
+        99)  reboot_vps ;;
+        100) desinstalador_script ;;
+        101) update_script ;;
+        102) exit_vps ;;
+        0)   exit_script ;;
+        *)   invalid_option ;;
+      esac
+    else
+      show_no_v2ray_menu
+      echo ""
+      echo -ne "${W}┌─[${G}${BOLD}Seleccione una opción${W}]${N}\n"
+      echo -ne "╰─> : ${G}"
+      read -r op
+      echo -ne "${N}"
+      case "${op:-}" in
+        1) run_module "Usuarios/ssh.sh" ;;
+        2) run_module "Protocolos/menu.sh" ;;
+        3) run_module "Herramientas/menu.sh" ;;
+        4) banner_ssh_menu ;;
+        5) run_module "Sistema/puertos.sh" ;;
+        6) run_module "Herramientas/speedtest.sh" ;;
+        99)  reboot_vps ;;
+        100) desinstalador_script ;;
+        101) update_script ;;
+        102) exit_vps ;;
+        0)   exit_script ;;
+        *)   invalid_option ;;
+      esac
+    fi
+  done
+}
+
+trap exit_script SIGINT SIGTERM
+
+check_license
+require_root
+main_menu
