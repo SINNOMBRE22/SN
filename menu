@@ -485,15 +485,8 @@ exit_script() {
 }
 
 # ── Menú principal ──────────────────────────────────────
-# ─── MENÚ PRINCIPAL CON AUTO-ACTUALIZACIÓN ────────────
 main_menu() {
   while true; do
-    # Recarga de colores dinámica
-    source /root/SN/lib/colores.sh 2>/dev/null
-
-    clear_screen
-
-    # Lógica de detección de V2Ray/Xray
     local v2ray_installed=false
     if systemctl is-active --quiet v2ray 2>/dev/null \
     || systemctl is-active --quiet xray 2>/dev/null \
@@ -502,7 +495,6 @@ main_menu() {
       v2ray_installed=true
     fi
 
-    # Encabezados
     show_banner
     show_services_status
     show_system_status
