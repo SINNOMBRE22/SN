@@ -78,22 +78,33 @@ require_root() {
 }
 
 # ── Módulos ─────────────────────────────────────────────
-run_module() {
-  local rel="$1"
-  local path="$ROOT_DIR/$rel"
+# --- CONFIGURACIÓN DE DIRECTORIOS ---
+export SC_DIR="/root/SN"
 
-  if [[ -f "$path" ]]; then
-    chmod +x "$path"
-    bash "$path"
-    clear_screen
+# --- FUNCIÓN DE BÚSQUEDA DUAL ---
+run_module() {
+  local archivo_nombre="$1" # Ejemplo: "Usuarios/ssh.sh"
+  
+  # Opción A: Ruta Directa (/root/SN/Usuarios/ssh.sh)
+  local ruta_directa="$SC_DIR/$archivo_nombre"
+  
+  # Opción B: Ruta en carpeta de módulos (/root/SN/modules/Usuarios/ssh.sh)
+  local ruta_modulo="$SC_DIR/modules/$archivo_nombre"
+
+  if [[ -f "$ruta_directa" ]]; then
+    source "$ruta_directa"
+  elif [[ -f "$ruta_modulo" ]]; then
+    source "$ruta_modulo"
   else
-    echo
-    echo -e "${Y}Módulo no disponible:${N} ${C}${rel}${N}"
-    echo -e "${Y}Ruta esperada:${N} $path"
-    echo -e "${Y}Estado:${N} En desarrollo..."
-    pause
+    # Si no lo encuentra en ninguna de las dos:
+    echo -e "${R} [!] ERROR: No se encontró el archivo:${N}"
+    echo -e "${Y} Intentado en: ${W}$ruta_directa${N}"
+    echo -e "${Y} Intentado en: ${W}$ruta_modulo${N}"
+    msg -bar
+    sleep 2
   fi
 }
+
 
 # ═══════════════════════════════════════════════════════
 #  SERVICIOS / PUERTOS  ─ VERSIÓN OPTIMIZADA
