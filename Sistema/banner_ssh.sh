@@ -22,6 +22,26 @@ DYN_TEMPLATE="/etc/banner_template.txt"
 DYN_SCRIPT="/etc/banner_sinnombre.sh"
 PAM_SSH="/etc/pam.d/sshd"
 PAM_DROPBEAR="/etc/pam.d/dropbear"
+CUSTOM_SERVICE="/etc/systemd/system/dropbear-custom.service"
+DROPBEAR_BIN="/usr/sbin/dropbear"
+
+# ── Detectar si Dropbear usa custom service ─────────────
+dropbear_is_custom() {
+    [[ -f "$CUSTOM_SERVICE" ]] && systemctl is-active --quiet dropbear-custom 2>/dev/null
+}
+
+# ── Reconstruir ExecStart del custom service con/sin banner
+dropbear_set_banner() {
+    local banner_file="$1"   # vacío = sin banner
+    [[ ! -f "$CUSTOM_SERVICE" ]] && return 0
+    if [[ -n "$banner_file" ]]; then
+        sed -i "s|ExecStart=.*|ExecStart=$(grep 'ExecStart=' "$CUSTOM_SERVICE" | sed 's/ExecStart=//' | sed 's/ -b [^ ]*//') -b $banner_file|" "$CUSTOM_SERVICE"
+    else
+        sed -i "s| -b [^ ]*||g" "$CUSTOM_SERVICE"
+    fi
+    systemctl daemon-reload >/dev/null 2>&1
+    systemctl restart dropbear-custom >/dev/null 2>&1
+}
 
 # Función del Título del Panel (Figlet + Lolcat)
 show_custom_banner() {
@@ -44,7 +64,13 @@ detect_ssh_services() {
 # Reiniciar servicios
 restart_services() {
     if $ssh_active; then systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null; fi
-    if $dropbear_active; then systemctl restart dropbear 2>/dev/null || service dropbear restart 2>/dev/null; fi
+    if $dropbear_active; then
+        if dropbear_is_custom; then
+            systemctl restart dropbear-custom >/dev/null 2>&1
+        else
+            systemctl restart dropbear 2>/dev/null || service dropbear restart 2>/dev/null
+        fi
+    fi
 }
 
 # ==========================================
@@ -53,12 +79,24 @@ restart_services() {
 disable_static() {
     detect_ssh_services
     if $ssh_active; then sed -i 's/^Banner.*/#Banner none/' /etc/ssh/sshd_config 2>/dev/null; fi
-    if $dropbear_active && [[ -f /etc/default/dropbear ]]; then sed -i 's/DROPBEAR_EXTRA_ARGS="-b \/etc\/issue.net"/DROPBEAR_EXTRA_ARGS=""/' /etc/default/dropbear 2>/dev/null; fi
+    if $dropbear_active; then
+        if dropbear_is_custom; then
+            dropbear_set_banner ""
+        elif [[ -f /etc/default/dropbear ]]; then
+            sed -i 's/DROPBEAR_EXTRA_ARGS="-b \/etc\/issue.net"/DROPBEAR_EXTRA_ARGS=""/' /etc/default/dropbear 2>/dev/null
+        fi
+    fi
 }
 
 disable_dynamic() {
     sed -i '/banner_sinnombre/d' $PAM_SSH 2>/dev/null
     if [[ -f "$PAM_DROPBEAR" ]]; then sed -i '/banner_sinnombre/d' $PAM_DROPBEAR 2>/dev/null; fi
+    # Dropbear custom: quitar banner y limpiar cron motd
+    detect_ssh_services
+    if $dropbear_active && dropbear_is_custom; then
+        dropbear_set_banner ""
+    fi
+    sed -i '/sn_motd_gen/d' /etc/crontab 2>/dev/null
 }
 
 # ==========================================
@@ -71,18 +109,51 @@ enable_static() {
         if grep -q "^#Banner" /etc/ssh/sshd_config; then sed -i 's/^#Banner.*/Banner \/etc\/issue.net/' /etc/ssh/sshd_config  
         elif ! grep -q "^Banner" /etc/ssh/sshd_config; then echo "Banner /etc/issue.net" >> /etc/ssh/sshd_config; fi
     fi
-    if $dropbear_active && [[ -f /etc/default/dropbear ]]; then
-        if grep -q "DROPBEAR_EXTRA_ARGS" /etc/default/dropbear; then sed -i 's/DROPBEAR_EXTRA_ARGS=.*/DROPBEAR_EXTRA_ARGS="-b \/etc\/issue.net"/' /etc/default/dropbear  
-        else echo 'DROPBEAR_EXTRA_ARGS="-b /etc/issue.net"' >> /etc/default/dropbear; fi
+    if $dropbear_active; then
+        if dropbear_is_custom; then
+            dropbear_set_banner "$STATIC_BANNER"
+        elif [[ -f /etc/default/dropbear ]]; then
+            if grep -q "DROPBEAR_EXTRA_ARGS" /etc/default/dropbear; then sed -i 's/DROPBEAR_EXTRA_ARGS=.*/DROPBEAR_EXTRA_ARGS="-b \/etc\/issue.net"/' /etc/default/dropbear  
+            else echo 'DROPBEAR_EXTRA_ARGS="-b /etc/issue.net"' >> /etc/default/dropbear; fi
+            restart_services
+        fi
+    fi
+}
+
+enable_dynamic() {
+    disable_static
+    # OpenSSH: via PAM
+    sed -i '2i auth optional pam_exec.so stdout /etc/banner_sinnombre.sh' $PAM_SSH
+    # Dropbear custom: no usa PAM — genera banner via -b apuntando a un motd pre-renderizado
+    # Un cron genera /etc/motd_dropbear con info genérica del servidor cada minuto
+    if $dropbear_active && dropbear_is_custom; then
+        dropbear_build_motd
+        dropbear_set_banner "/etc/motd_dropbear"
+    elif [[ -f "$PAM_DROPBEAR" ]]; then
+        sed -i '2i auth optional pam_exec.so stdout /etc/banner_sinnombre.sh' $PAM_DROPBEAR
     fi
     restart_services
 }
 
-enable_dynamic() {
-    disable_static 
-    sed -i '2i auth optional pam_exec.so stdout /etc/banner_sinnombre.sh' $PAM_SSH
-    if [[ -f "$PAM_DROPBEAR" ]]; then sed -i '2i auth optional pam_exec.so stdout /etc/banner_sinnombre.sh' $PAM_DROPBEAR; fi
-    restart_services
+# Genera el motd estático de Dropbear (datos del servidor, sin info por usuario)
+dropbear_build_motd() {
+    cat > /etc/sn_motd_gen.sh << 'MOTDEOF'
+#!/bin/bash
+TEMPLATE="/etc/banner_template.txt"
+OUTPUT="/etc/motd_dropbear"
+[[ ! -f "$TEMPLATE" ]] && exit 0
+HTML=$(cat "$TEMPLATE")
+HTML="${HTML//[USER]/}"
+HTML="${HTML//[EXP]/}"
+HTML="${HTML//[DAYS]/}"
+echo -e "$HTML" > "$OUTPUT"
+MOTDEOF
+    chmod +x /etc/sn_motd_gen.sh
+    /etc/sn_motd_gen.sh
+    # Registrar en cron si no está
+    if ! grep -q "sn_motd_gen" /etc/crontab 2>/dev/null; then
+        echo "* * * * * root /etc/sn_motd_gen.sh" >> /etc/crontab
+    fi
 }
 
 # ==========================================
@@ -183,7 +254,8 @@ delete_all() {
     if [[ "$confirm" == "s" || "$confirm" == "S" ]]; then
         disable_static
         disable_dynamic
-        rm -f "$STATIC_BANNER" "$DYN_TEMPLATE" "$DYN_SCRIPT"
+        rm -f "$STATIC_BANNER" "$DYN_TEMPLATE" "$DYN_SCRIPT" /etc/motd_dropbear /etc/sn_motd_gen.sh
+        sed -i '/sn_motd_gen/d' /etc/crontab 2>/dev/null
         restart_services
         echo -e "${G}¡Banners eliminados correctamente!${N}"
     fi
@@ -196,8 +268,11 @@ delete_all() {
 show_menu() {
     estado_estatico="${R}[OFF]${N}"
     estado_dinamico="${R}[OFF]${N}"
-    if grep -q "^Banner /etc/issue.net" /etc/ssh/sshd_config 2>/dev/null; then estado_estatico="${G}[ON]${N}"; fi
-    if grep -q "banner_sinnombre.sh" $PAM_SSH 2>/dev/null; then estado_dinamico="${G}[ON]${N}"; fi
+    detect_ssh_services
+    if grep -q "^Banner /etc/issue.net" /etc/ssh/sshd_config 2>/dev/null; then estado_estatico="${G}[ON]${N}"
+    elif $dropbear_active && dropbear_is_custom && grep -q "\-b " "$CUSTOM_SERVICE" 2>/dev/null; then estado_estatico="${G}[ON]${N}"; fi
+    if grep -q "banner_sinnombre.sh" $PAM_SSH 2>/dev/null; then estado_dinamico="${G}[ON]${N}"
+    elif $dropbear_active && dropbear_is_custom && grep -q "motd_dropbear" "$CUSTOM_SERVICE" 2>/dev/null; then estado_dinamico="${G}[ON]${N}"; fi
 
     clear
     show_custom_banner

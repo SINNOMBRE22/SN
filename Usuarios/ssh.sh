@@ -387,18 +387,11 @@ add_user() {
   clear
   msg -bar
 
-  local system distro vercion pass_enc
-  system=$(head -1 /etc/issue | sed 's/^ *//')
-  distro=$(echo "$system" | awk '{print $1}')
-  vercion=$(echo "$system" | awk '{print $2}' | cut -d '.' -f1)
+  local pass_enc
+  pass_enc=$(openssl passwd -1 "$pass_raw")
 
-  if [[ "${distro}" = @(Ubuntu|Debian) && "${vercion}" = "16" ]]; then
-    pass_enc=$(openssl passwd -1 "$pass_raw")
-  else
-    pass_enc=$(openssl passwd -6 "$pass_raw")
-  fi
 
-  if useradd -M -s /bin/false -e "${valid}" -K PASS_MAX_DAYS="${dias}" -p "${pass_enc}" -c "${limite},${pass_raw}" "$user"; then
+  if useradd -M -s /bin/false -e "${valid}" -p "${pass_enc}" -c "${limite},${pass_raw}" "$user" && chage -m 0 -M 99999 -I -1 -E "${valid}" "$user" 2>/dev/null; then
 
     if [[ "${newfile}" = @(s|S) ]]; then
       rm -rf "/etc/openvpn/easy-rsa/pki/reqs/${user}.req"
@@ -592,7 +585,7 @@ mktmpuser() {
     fi
   fi
 
-  useradd -M -s /bin/false -p "$(openssl passwd -6 "$pass")" "$name"
+  useradd -M -s /bin/false -p "$(openssl passwd -1 "$pass")" "$name"
 
   local timer=$(( tmp * 60 ))
   cat > "/tmp/sn_tmp_${name}.sh" << TMPEOF
@@ -771,7 +764,7 @@ edit_user_fun() {
   valid=$(date '+%C%y-%m-%d' -d " + $3 days")
   clear
   msg -bar
-  if usermod -p "$(openssl passwd -6 "$2")" -e "$valid" -c "$4,$2" "$1" 2>/dev/null; then
+  if usermod -p "$(openssl passwd -1 "$2")" -e "$valid" -c "$4,$2" "$1" 2>/dev/null; then
     print_center -verd "Usuario Modificado Con Éxito"
   else
     print_center -verm2 "Error, Usuario no Modificado"
@@ -926,7 +919,7 @@ build_udp_user_list() {
 sshmonitor() {
   # Cargar datos de red y sistema antes de mostrar
   get_vps_system_info
-  
+
   clear
   # Usar title si existe, si no, un header manual con tus colores
   if declare -f title > /dev/null; then
@@ -1441,7 +1434,7 @@ while :; do
     "🔒 ${Y}LIMITADOR DE CUENTAS${N} 🔒 ${local_lim}" \
     "ELIMINAR USUARIOS VENCIDOS" \
     "⚠️ ${R}ELIMINAR TODOS LOS USUARIOS${N} ⚠️"
-  
+
   msg -bar3
   echo -e " [0] Volver"
   msg -bar
@@ -1449,7 +1442,7 @@ while :; do
   # Selección
   echo -ne " ${W}Opción:${G} "
   read -r selection
-  
+
   case "${selection}" in
     0)  break ;;
     1)  new_user ;;
