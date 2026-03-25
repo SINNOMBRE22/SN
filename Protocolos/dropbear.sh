@@ -1,12 +1,7 @@
 #!/bin/bash
 # =========================================================
-# SinNombre v2.3 - ADMINISTRADOR DROPBEAR
+# SinNombre v2.4 - ADMINISTRADOR DROPBEAR (instalación directa mod)
 # Archivo: SN/Protocolos/dropbear.sh
-#
-# MEJORAS v2.3 (2026-03-22):
-# - Si falla el arranque con la configuración por defecto, crea un servicio systemd personalizado
-# - Verificación final garantiza que dropbear esté escuchando
-# - Eliminación completa al desinstalar (incluye el servicio personalizado)
 # =========================================================
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,6 +25,8 @@ DROPBEAR_BIN="/usr/sbin/dropbear"
 DROPBEAR_KEYS="/etc/dropbear"
 DROPBEAR_LOGS="/var/log/dropbear*"
 CUSTOM_SERVICE="/etc/systemd/system/dropbear-custom.service"
+SN_MOD_TAG="Dropbear_Mod_SN"    # Tag visible en SSH-2.0-<tag>_version
+SN_MOD_FLAG="/etc/SN/.dropbear_mod"  # Marca que indica instalación mod
 
 # =========================================================
 #  VERIFICAR DEPENDENCIAS
@@ -332,7 +329,150 @@ force_start_dropbear() {
 }
 
 # =========================================================
-#  INSTALAR DROPBEAR (MÚLTIPLES PUERTOS)
+#  COMPILAR E INSTALAR DROPBEAR MOD (DISCRETO)
+# =========================================================
+compile_dropbear_mod() {
+  # Dependencias (sin mensajes)
+  (
+    apt-get install -y build-essential libz-dev wget libpam0g-dev >/dev/null 2>&1 || true
+  ) &
+  spinner $! "Preparando entorno"
+
+  # Versión instalada vía apt
+  local db_ver
+  db_ver=$(apt-cache show dropbear 2>/dev/null | grep -m1 "^Version:" | awk '{print $2}' | cut -d- -f1 | tr -d '\n\r')
+  [[ -z "$db_ver" ]] && db_ver="2022.83"
+
+  local src_dir="/tmp/dropbear_sn_build"
+  rm -rf "$src_dir" && mkdir -p "$src_dir"
+
+  # Descargar y descomprimir
+  (
+    wget -q "https://matt.ucc.asn.au/dropbear/releases/dropbear-${db_ver}.tar.bz2"          -O "${src_dir}/dropbear.tar.bz2" 2>/dev/null     || wget -q "https://matt.ucc.asn.au/dropbear/releases/dropbear-2022.83.tar.bz2"              -O "${src_dir}/dropbear.tar.bz2" 2>/dev/null
+    tar -xjf "${src_dir}/dropbear.tar.bz2" -C "$src_dir" --strip-components=1 2>/dev/null
+  ) &
+  spinner $! "Descargando fuentes"
+
+  if [[ ! -f "${src_dir}/svr-session.c" ]]; then
+    echo -e "  ${R}✗${N} ${W}Error al descargar el código fuente${N}"
+    rm -rf "$src_dir"
+    return 1
+  fi
+
+  local mod_tag="${SN_MOD_TAG}"
+
+  # Patch 1: sysoptions.h — cambiar string de versión
+  sed -i 's|"SSH-2.0-dropbear_" DROPBEAR_VERSION|"SSH-2.0-'"${SN_MOD_TAG}"'_" DROPBEAR_VERSION|'     "${src_dir}/sysoptions.h"
+
+  # Patch 2: svr-auth.c — hook post-auth + banner dinámico (sin mensajes)
+  cat > /tmp/sn_patch.py << 'PEOF' 2>/dev/null
+import sys
+f = sys.argv[1]
+with open(f) as fh: src = fh.read()
+if "sn_post_auth" in src:
+    sys.exit(0)
+h1 = '{ char _sn[512]; snprintf(_sn,sizeof(_sn),"SN_USER=\'%s\' /etc/sn_post_auth.sh 2>/dev/null",ses.authstate.pw_name?ses.authstate.pw_name:""); system(_sn); } '
+src = src.replace("send_msg_userauth_success();", h1 + "send_msg_userauth_success();", 1)
+h2 = '{ FILE *_f=fopen("/etc/motd","r"); if(_f){ buffer *_b=buf_new(4096); int _c; while((_c=fgetc(_f))!=EOF && _b->len<4090) buf_putbyte(_b,(unsigned char)_c); fclose(_f); if(_b->len>0){ buf_setpos(_b,0); send_msg_userauth_banner(_b); } buf_free(_b); } } '
+src = src.replace("ses.authstate.authdone = 1;", h2 + "ses.authstate.authdone = 1;", 1)
+with open(f, "w") as fh: fh.write(src)
+PEOF
+  python3 /tmp/sn_patch.py "${src_dir}/svr-auth.c" >/dev/null 2>&1
+  rm -f /tmp/sn_patch.py
+
+  # Compilar con PAM habilitado
+  (
+    cd "$src_dir" || exit 1
+    ./configure --prefix=/usr --disable-zlib --enable-pam >/dev/null 2>&1
+    make -j"$(nproc)" >/dev/null 2>&1
+  ) &
+  spinner $! "Compilando"
+
+  if [[ ! -f "${src_dir}/dropbear" ]]; then
+    echo -e "  ${R}✗${N} ${W}Error en la compilación${N}"
+    rm -rf "$src_dir"
+    return 1
+  fi
+
+  # Instalar y marcar
+  cp -f "${src_dir}/dropbear" "$DROPBEAR_BIN"
+  cp -f "${src_dir}/dropbearkey" /usr/bin/dropbearkey 2>/dev/null || true
+  chmod +x "$DROPBEAR_BIN"
+  mkdir -p "$(dirname "$SN_MOD_FLAG")"
+  echo "${mod_tag}_${db_ver}" > "$SN_MOD_FLAG"
+  rm -rf "$src_dir"
+
+  # Crear /etc/pam.d/dropbear si no existe
+  if [[ ! -f /etc/pam.d/dropbear ]]; then
+    cp /etc/pam.d/sshd /etc/pam.d/dropbear 2>/dev/null ||     printf '%s\n' '@include common-auth' '@include common-account' '@include common-session' '@include common-password' > /etc/pam.d/dropbear
+  fi
+
+  # Crear script post-auth vacío
+  if [[ ! -f /etc/sn_post_auth.sh ]]; then
+    printf '%s\n' '#!/bin/bash' 'exit 0' > /etc/sn_post_auth.sh
+    chmod +x /etc/sn_post_auth.sh
+  fi
+
+  echo -e "  ${G}✓${N} ${W}Compilación finalizada${N}"
+  return 0
+}
+
+# =========================================================
+#  LÓGICA COMÚN POST-INSTALACIÓN (puertos, keys, servicio)
+# =========================================================
+_finalize_install() {
+  local final_ports=("$@")
+
+  # Crear directorio de claves
+  mkdir -p "$DROPBEAR_KEYS" 2>/dev/null || true
+
+  # Generar claves RSA
+  if [[ ! -f "${DROPBEAR_KEYS}/dropbear_rsa_host_key" ]]; then
+    (
+      dropbearkey -t rsa -f "${DROPBEAR_KEYS}/dropbear_rsa_host_key" -s 2048 >/dev/null 2>&1 || {
+        ssh-keygen -t rsa -f "${DROPBEAR_KEYS}/dropbear_rsa_host_key" -N "" >/dev/null 2>&1 || true
+      }
+    ) &
+    spinner $! "Generando claves"
+  fi
+
+  # Escribir configuración
+  progress_bar "Aplicando configuración" 1
+  write_dropbear_config "${final_ports[@]}"
+
+  # Deshabilitar servicio estándar
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl disable dropbear >/dev/null 2>&1 || true
+    systemctl stop dropbear >/dev/null 2>&1 || true
+  fi
+
+  # Crear e iniciar servicio personalizado
+  (
+    create_custom_service "${final_ports[@]}"
+  ) &
+  spinner $! "Iniciando servicio"
+
+  if verify_dropbear_running; then
+    echo -e "  ${G}✓${N} ${W}Servicio iniciado correctamente${N}"
+  else
+    echo -e "  ${R}✗${N} ${W}No se pudo iniciar el servicio${N}"
+  fi
+
+  open_firewall_ports "$(echo "${final_ports[@]}" | tr " " ",")"
+
+  echo ""
+  hr
+  echo -e "  ${G}${BOLD}✓ DROPBEAR INSTALADO CON ÉXITO${N}"
+  hr
+  echo ""
+  echo -e "  ${W}Puerto(s):${N}        ${G}${final_ports[*]}${N}"
+  echo ""
+  hr
+  pause
+}
+
+# =========================================================
+#  INSTALAR DROPBEAR (DIRECTAMENTE EL MOD)
 # =========================================================
 install_dropbear_custom() {
   show_header
@@ -347,6 +487,7 @@ install_dropbear_custom() {
 
   ensure_false_shell
 
+  # ── Pedir puertos ──────────────────────────────────────
   echo ""
   echo -e "  ${W}Puedes ingresar varios puertos separados por espacio${N}"
   echo -e "  ${W}Ejemplo: 80 90 443 2222${N}"
@@ -355,7 +496,7 @@ install_dropbear_custom() {
     echo -ne "  ${W}Ingresa los puertos [1-65535]: ${G}"
     read -r ports_input
     echo -ne "${N}"
-    valid=true
+    local valid=true
     for p in $ports_input; do
       if [[ ! "$p" =~ ^[0-9]+$ ]] || (( p < 1 || p > 65535 )); then
         echo -e "  ${R}✗${N} ${W}Puerto inválido: $p${N}"
@@ -363,14 +504,11 @@ install_dropbear_custom() {
         break
       fi
     done
-    if [[ "$valid" != true ]]; then
-      ports_input=""
-    fi
+    [[ "$valid" != true ]] && ports_input=""
   done
 
-  # Verificar conflictos con puertos en uso
-  local used_ports=""
-  local final_ports=()
+  # Verificar conflictos
+  local used_ports="" final_ports=()
   for p in $ports_input; do
     if ss -H -lnt 2>/dev/null | awk '{print $4}' | awk -F: '{print $NF}' | grep -qx "$p"; then
       used_ports="$used_ports $p"
@@ -384,10 +522,7 @@ install_dropbear_custom() {
     echo -ne "  ${W}¿Continuar con los puertos libres? (s/n): ${G}"
     read -r force
     echo -ne "${N}"
-    if [[ "${force,,}" != "s" ]]; then
-      pause
-      return 0
-    fi
+    [[ "${force,,}" != "s" ]] && { pause; return 0; }
   fi
 
   if [[ ${#final_ports[@]} -eq 0 ]]; then
@@ -399,72 +534,28 @@ install_dropbear_custom() {
   echo ""
   sep
 
-  # Paso 1: Actualizar repos
+  # Paso 1: Actualizar repos e instalar paquete base
   (
     apt-get update -y >/dev/null 2>&1 || true
   ) &
-  spinner $! "Actualizando repositorios..."
+  spinner $! "Actualizando repositorios"
 
-  # Paso 2: Instalar paquete
-  progress_bar "Instalando Dropbear" 3
+  progress_bar "Instalando paquete base" 3
   apt-get install -y dropbear >/dev/null 2>&1 || {
     echo -e "  ${R}✗${N} ${W}Error al instalar dropbear${N}"
     pause
     return 1
   }
+  rm -f "$SN_MOD_FLAG"
 
-  # Paso 3: Crear directorio de claves
-  mkdir -p "$DROPBEAR_KEYS" 2>/dev/null || true
+  # Paso 2: Compilar e instalar la versión modificada
+  compile_dropbear_mod || {
+    echo -e "  ${Y}⚠${N} ${W}No se pudo compilar la versión personalizada, se usará la normal${N}"
+    sleep 2
+  }
 
-  # Paso 4: Generar claves RSA
-  if [[ ! -f "${DROPBEAR_KEYS}/dropbear_rsa_host_key" ]]; then
-    (
-      dropbearkey -t rsa -f "${DROPBEAR_KEYS}/dropbear_rsa_host_key" -s 2048 >/dev/null 2>&1 || {
-        ssh-keygen -t rsa -f "${DROPBEAR_KEYS}/dropbear_rsa_host_key" -N '' >/dev/null 2>&1 || true
-      }
-    ) &
-    spinner $! "Generando claves RSA (2048 bits)..."
-  fi
-
-  # Escribir configuración estándar
-  progress_bar "Escribiendo configuración" 1
-  write_dropbear_config "${final_ports[@]}"
-
-  # Deshabilitar el servicio estándar (no lee /etc/default/dropbear en Ubuntu moderno)
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl disable dropbear >/dev/null 2>&1 || true
-    systemctl stop dropbear >/dev/null 2>&1 || true
-  fi
-
-  # Crear e iniciar servicio personalizado directamente
-  (
-    create_custom_service "${final_ports[@]}"
-  ) &
-  spinner $! "Iniciando servicio Dropbear..."
-
-  # Verificar que arrancó
-  if verify_dropbear_running; then
-    echo -e "  ${G}✓${N} ${W}Servicio Dropbear iniciado correctamente${N}"
-  else
-    echo -e "  ${R}✗${N} ${W}No se pudo iniciar el servicio${N}"
-  fi
-
-  # Abrir puertos en firewall
-  open_firewall_ports "$(echo "${final_ports[@]}" | tr ' ' ',')"
-
-  echo ""
-  hr
-  echo -e "  ${G}${BOLD}✓ DROPBEAR INSTALADO CON ÉXITO${N}"
-  hr
-  echo ""
-  echo -e "  ${W}Puerto(s):${N}        ${G}${final_ports[*]}${N}"
-  echo -e "  ${W}Configuración:${N}   ${C}${DROPBEAR_CONF}${N}"
-  echo -e "  ${W}Claves:${N}          ${C}${DROPBEAR_KEYS}/${N}"
-  echo -e "  ${W}Protocolo:${N}       ${Y}SSH-2.0-dropbear${N}"
-  echo ""
-  hr
-  pause
-  return 0
+  # Paso 3: Finalizar
+  _finalize_install "${final_ports[@]}"
 }
 
 # =========================================================
@@ -511,7 +602,7 @@ set_port_custom() {
   echo ""
   # Detener todo
   stop_all_dropbear &
-  spinner $! "Deteniendo servicios existentes..."
+  spinner $! "Deteniendo servicios existentes"
 
   # Escribir nueva configuración estándar
   progress_bar "Actualizando configuración" 1
@@ -521,7 +612,7 @@ set_port_custom() {
   (
     restart_dropbear_service
   ) &
-  spinner $! "Reiniciando con nuevos puertos..."
+  spinner $! "Reiniciando con nuevos puertos"
 
   # Verificar que arrancó
   if ! verify_dropbear_running; then
@@ -614,7 +705,7 @@ uninstall_dropbear_custom() {
       systemctl daemon-reload 2>/dev/null || true
     fi
   ) &
-  spinner $! "Deteniendo servicios..."
+  spinner $! "Deteniendo servicios"
 
   # Purgar paquete
   progress_bar "Eliminando paquete" 3
@@ -634,7 +725,7 @@ uninstall_dropbear_custom() {
     journalctl --vacuum-time=1s --unit=dropbear-custom 2>/dev/null || true
     rm -f $DROPBEAR_LOGS 2>/dev/null || true
   ) &
-  spinner $! "Limpiando logs y restos..."
+  spinner $! "Limpiando logs y restos"
 
   # Cerrar puertos en firewall
   if [[ -n "$current_ports" ]]; then
